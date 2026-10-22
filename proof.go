@@ -67,7 +67,7 @@ func (b *builder) rule(src *Rule) *Rule {
 	if c, ok := b.rules[src]; ok {
 		return c
 	}
-	c := &Rule{Head: copyAtom(src.Head), Line: src.Line}
+	c := &Rule{Head: copyAtom(src.Head), Line: src.Line, Text: src.Text, Set: src.Set}
 	if src.Body != nil {
 		c.Body = make([]Literal, len(src.Body))
 		for i, l := range src.Body {

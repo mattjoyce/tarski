@@ -35,6 +35,7 @@ func NewRuleSet(name string, version int, text string) (RuleSet, error) {
 	if err != nil {
 		return RuleSet{}, fmt.Errorf("rule set %s/%d: %w", name, version, err)
 	}
+	p.Name = fmt.Sprintf("%s/%d", name, version) // what Compile tags each rule with
 	return RuleSet{Name: name, Version: version, Hash: textHash(text), Program: p}, nil
 }
 

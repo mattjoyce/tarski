@@ -47,6 +47,15 @@ type Rule struct {
 	Head Atom
 	Body []Literal
 	Line int
+	// Text is the rule as written, its final period included and its surrounding
+	// whitespace trimmed. A comment between its tokens stays in it. A rule built by hand
+	// has none.
+	Text string
+	// Set is the rule set the rule came from, "name/version" as RuleSet.ID leads with,
+	// so a proof can say which of several loaded sets a rule belongs to. It is empty for
+	// a rule from a bare Program. Parse leaves it empty; Compile fills it from the
+	// Program's Name.
+	Set string
 }
 
 // Program is parsed text: rules, and the relations declared without rules
@@ -55,6 +64,9 @@ type Program struct {
 	Rules    []Rule
 	Declared map[string]int
 	Text     string
+	// Name is the rule set the program belongs to, "name/version", which NewRuleSet sets.
+	// Parse leaves it empty.
+	Name string
 }
 
 // Parse reads a program. The syntax is small:
@@ -72,7 +84,7 @@ func Parse(text string) (Program, error) {
 	if err != nil {
 		return Program{}, err
 	}
-	p := &parser{toks: toks, prog: Program{Declared: map[string]int{}, Text: text}}
+	p := &parser{src: text, toks: toks, prog: Program{Declared: map[string]int{}, Text: text}}
 	for !p.at(tokEOF) {
 		if err := p.statement(); err != nil {
 			return Program{}, err
@@ -96,6 +108,7 @@ type token struct {
 	kind tokKind
 	text string
 	line int
+	pos  int // byte offset of the token's first character in the source
 }
 
 type lexer struct {
@@ -107,10 +120,13 @@ type lexer struct {
 func (lx *lexer) all() ([]token, error) {
 	var toks []token
 	for {
+		lx.skipSpace()
+		start := lx.pos
 		t, err := lx.next()
 		if err != nil {
 			return nil, err
 		}
+		t.pos = start
 		toks = append(toks, t)
 		if t.kind == tokEOF {
 			return toks, nil
@@ -131,17 +147,17 @@ func (lx *lexer) next() (token, error) {
 	case r == '"':
 		return lx.str(line)
 	case r >= 'a' && r <= 'z':
-		return token{tokName, lx.word(), line}, nil
+		return token{kind: tokName, text: lx.word(), line: line}, nil
 	case r >= 'A' && r <= 'Z' || r == '_':
-		return token{tokVar, lx.word(), line}, nil
+		return token{kind: tokVar, text: lx.word(), line: line}, nil
 	case isDigit(r) || r == '-':
 		lx.number()
-		return token{tokNumber, lx.src[start:lx.pos], line}, nil
+		return token{kind: tokNumber, text: lx.src[start:lx.pos], line: line}, nil
 	}
 	for _, p := range []string{":-", "!=", "<=", ">=", "=", "<", ">", "(", ")", ",", ".", "/"} {
 		if strings.HasPrefix(lx.src[lx.pos:], p) {
 			lx.pos += len(p)
-			return token{tokPunct, p, line}, nil
+			return token{kind: tokPunct, text: p, line: line}, nil
 		}
 	}
 	return token{}, fmt.Errorf("%w: line %d: unexpected %q", ErrSyntax, line, r)
@@ -219,7 +235,7 @@ func (lx *lexer) str(line int) (token, error) {
 			if err != nil {
 				return token{}, fmt.Errorf("%w: line %d: bad string %s", ErrSyntax, line, lx.src[start:lx.pos])
 			}
-			return token{tokString, s, line}, nil
+			return token{kind: tokString, text: s, line: line}, nil
 		case '\n':
 			return token{}, fmt.Errorf("%w: line %d: string runs past the end of the line", ErrSyntax, line)
 		}
@@ -233,6 +249,7 @@ var comparisonOps = map[string]bool{"=": true, "!=": true, "<": true, "<=": true
 
 type parser struct {
 	toks []token
+	src  string
 	i    int
 	prog Program
 }
@@ -274,7 +291,8 @@ func (p *parser) statement() error {
 	if !p.at(tokName) {
 		return p.fail("expected a relation name")
 	}
-	line := p.peek().line
+	first := p.peek()
+	line := first.line
 	if p.toks[p.i+1].kind == tokPunct && p.toks[p.i+1].text == "/" {
 		name := p.take().text
 		p.take()
@@ -307,9 +325,11 @@ func (p *parser) statement() error {
 			p.take()
 		}
 	}
+	dot := p.peek()
 	if err := p.expect("."); err != nil {
 		return err
 	}
+	r.Text = strings.TrimSpace(p.src[first.pos : dot.pos+1])
 	p.prog.Rules = append(p.prog.Rules, r)
 	return nil
 }

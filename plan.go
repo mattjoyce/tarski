@@ -56,6 +56,9 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 			if err := checkRule(r, arities, schema); err != nil {
 				return Plan{}, err
 			}
+			if p.Name != "" {
+				r.Set = p.Name // r is the plan's own copy: the caller's Program is not tagged
+			}
 			rules = append(rules, r)
 		}
 	}
