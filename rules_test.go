@@ -2,6 +2,7 @@ package datalog_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/mattjoyce/shearline/datalog"
@@ -104,5 +105,41 @@ func TestProof_NamesTheSetAndTheText(t *testing.T) {
 	}
 	if got := reach.Body[0].Rule; got == nil || got.Set != "base/1" || got.Text != "reach(X, Y) :- edge(X, Y)." {
 		t.Errorf("the inner proof's rule = %+v, want base/1 and its own text", got)
+	}
+}
+
+// Clone copies everything and shares nothing: it equals the original, and writing
+// through the copy's atoms, comparisons, declarations and rules leaves the original be.
+func TestProgram_Clone(t *testing.T) {
+	t.Parallel()
+	set, err := datalog.NewRuleSet("demo", 1, "hook/2.\nup(X) :- node(X), not edge(X, _), X != \"q\".\nkind(\"bp\").\n")
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	orig := set.Program
+	orig.Rules[0].Set = "demo/1"
+	want := orig.Clone()
+	if !reflect.DeepEqual(orig, want) {
+		t.Fatalf("Clone differs from the original:\n%+v\n%+v", orig, want)
+	}
+	if orig.Name == "" || orig.Text == "" || orig.Rules[0].Text == "" || orig.Rules[0].Set == "" || orig.Rules[0].Line == 0 || len(orig.Declared) == 0 {
+		t.Fatal("the test program leaves a field empty, so the copy proves nothing about it")
+	}
+	c := orig.Clone()
+	c.Name, c.Text = "x", "x"
+	c.Declared["hook"] = 9
+	c.Declared["new"] = 1
+	c.Rules[0].Head.Name = "x"
+	c.Rules[0].Head.Args[0] = datalog.Term{Var: "Z"}
+	c.Rules[0].Body[0].Atom.Name = "x"
+	c.Rules[0].Body[1].Atom.Args[0] = datalog.Term{Var: "Z"}
+	c.Rules[0].Body[2].Compare.Op = "="
+	c.Rules[0].Text, c.Rules[0].Set = "x", "x"
+	c.Rules[1].Head.Args[0] = datalog.Term{Var: "Z"}
+	if !reflect.DeepEqual(orig, want) {
+		t.Errorf("writing through the clone changed the original:\n%+v\nwas\n%+v", orig, want)
+	}
+	if zero := (datalog.Program{}).Clone(); zero.Rules != nil || zero.Declared != nil {
+		t.Errorf("Clone of the zero Program = %+v, want it zero", zero)
 	}
 }
