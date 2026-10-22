@@ -150,9 +150,15 @@ func (lx *lexer) str(line int) (token, error) {
 			continue
 		case '"':
 			lx.pos++
-			s, err := strconv.Unquote(lx.src[start:lx.pos])
+			raw := lx.src[start:lx.pos]
+			s, err := strconv.Unquote(raw)
 			if err != nil {
-				return token{}, fmt.Errorf("%w: line %d: bad string %s", ErrSyntax, line, lx.src[start:lx.pos])
+				return token{}, fmt.Errorf("%w: line %d: bad string %s", ErrSyntax, line, raw)
+			}
+			// Both the bytes as written and the string they unquote to: a raw 0xff would be
+			// read as U+FFFD, and an escape such as \xff would make a byte that is not text.
+			if !utf8.ValidString(raw) || !utf8.ValidString(s) {
+				return token{}, fmt.Errorf("%w: line %d: string is not valid UTF-8", ErrSyntax, line)
 			}
 			return token{kind: tokString, text: s, line: line}, nil
 		case '\n':

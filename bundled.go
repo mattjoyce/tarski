@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -44,16 +45,27 @@ func (s RuleSet) ID() string {
 	return fmt.Sprintf("%s/%d %s", s.Name, s.Version, s.Hash)
 }
 
-// Verify checks that the rule set is what its hash says: the hash is recomputed over
-// the program's text and compared. A set built by hand, or edited after NewRuleSet,
-// would otherwise put in a receipt a hash that matches neither the text nor the rules
-// that ran. A program with no text cannot be verified and is refused.
+// Verify checks that the rule set is what its hash says, and that what runs is what was
+// hashed. The hash is recomputed over the program's text and compared. The text is then
+// parsed again and the result must equal the set's Program, with the name NewRuleSet
+// would give it: the text is the one authoritative representation, so an AST edited
+// after NewRuleSet, or built by hand around someone else's hash, is refused. A set
+// built or edited otherwise would put in a receipt a hash that matches neither the text
+// nor the rules that ran. A program with no text cannot be verified and is refused.
 func (s RuleSet) Verify() error {
 	if s.Program.Text == "" {
 		return fmt.Errorf("%w: rule set %s/%d has no program text to verify its hash against", ErrInvalid, s.Name, s.Version)
 	}
 	if want := textHash(s.Program.Text); s.Hash != want {
 		return fmt.Errorf("%w: rule set %s/%d: hash %q is not the hash of its text (%s)", ErrInvalid, s.Name, s.Version, s.Hash, want)
+	}
+	parsed, err := Parse(s.Program.Text)
+	if err != nil {
+		return fmt.Errorf("%w: rule set %s/%d: its text does not parse: %v", ErrInvalid, s.Name, s.Version, err)
+	}
+	parsed.Name = fmt.Sprintf("%s/%d", s.Name, s.Version)
+	if !reflect.DeepEqual(parsed, s.Program) {
+		return fmt.Errorf("%w: rule set %s/%d: the program does not match its text", ErrInvalid, s.Name, s.Version)
 	}
 	return nil
 }

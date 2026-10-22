@@ -30,7 +30,11 @@ type Const struct {
 	n    float64
 }
 
-// String makes a string constant.
+// String makes a string constant. The engine's string domain is valid UTF-8: JSON
+// would write an invalid byte and U+FFFD as the same text, so two different facts
+// would share an answer and its hash. The two entry points, the lexer and
+// NewBase and Base.With, refuse a string that is not valid UTF-8. String itself stays
+// total and does not check, so a Const built here is checked where it enters a Base.
 func String(s string) Const { return Const{kind: KindString, s: s} }
 
 // Bool makes a boolean constant.

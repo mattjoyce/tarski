@@ -1,6 +1,9 @@
 package datalog
 
-import "fmt"
+import (
+	"fmt"
+	"unicode/utf8"
+)
 
 // Fact is one tuple of a base relation.
 type Fact struct {
@@ -71,6 +74,9 @@ func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 			return nil, fmt.Errorf("%w: a fact of %s has %d arguments, but %s is %s/%d",
 				ErrInvalid, f.Relation, len(f.Tuple), f.Relation, f.Relation, n)
 		}
+		if err := checkUTF8(f); err != nil {
+			return nil, err
+		}
 		if err := b.check(f); err != nil {
 			return nil, err
 		}
@@ -116,6 +122,17 @@ func (b Base) check(f Fact) error {
 	}
 	if err := check(Atom{Name: f.Relation, Args: args}); err != nil {
 		return fmt.Errorf("%w: a fact of %s: %w", ErrInvalid, f.Relation, err)
+	}
+	return nil
+}
+
+// checkUTF8 refuses a fact holding a string that is not valid UTF-8, the engine's one
+// string domain (see String).
+func checkUTF8(f Fact) error {
+	for i, c := range f.Tuple {
+		if c.kind == KindString && !utf8.ValidString(c.s) {
+			return fmt.Errorf("%w: a fact of %s has a string at argument %d that is not valid UTF-8", ErrInvalid, f.Relation, i+1)
+		}
 	}
 	return nil
 }

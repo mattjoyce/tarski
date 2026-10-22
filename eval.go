@@ -331,8 +331,10 @@ func holds(c Comparison, env map[string]Const) bool {
 		return ok && cmp <= 0
 	case ">":
 		return ok && cmp > 0
-	default:
+	case ">=":
 		return ok && cmp >= 0
+	default:
+		return false // Compile refuses any other operator; failing closed if one gets here
 	}
 }
 

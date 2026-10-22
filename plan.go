@@ -40,9 +40,21 @@ type rule struct {
 
 // Compile validates programs against a schema and groups their rules into strata.
 // The programs are read as one: a later program defines what an earlier one declared,
-// which is how a consumer's rules build on a bundled rule set. A relation declared and
+// which is how a consumer's rules build on a bundled rule set. Programs are copied, and
+// a malformed one (see checkShape) is ErrInvalid. A relation declared and
 // defined nowhere is empty, not an error: that is how a rule set leaves a hook open.
 func Compile(schema Schema, programs ...Program) (Plan, error) {
+	// The plan owns what it compiles: it works from copies, so the caller editing a
+	// Program afterwards changes nothing the plan derives. Shape is checked on the copy
+	// before anything walks it.
+	owned := make([]Program, len(programs))
+	for i, p := range programs {
+		owned[i] = p.Clone()
+	}
+	programs = owned
+	if err := checkShape(programs); err != nil {
+		return Plan{}, err
+	}
 	if err := checkSchema(schema); err != nil {
 		return Plan{}, err
 	}
