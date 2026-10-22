@@ -4,25 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 )
 
-// ErrTooLarge marks an evaluation refused for its size: the tuples it derived encode
-// to more than the bound. A more selective rule or a smaller base is the remedy;
-// asking again unchanged will fail again.
+// ErrTooLarge marks an evaluation refused for its size: it derived more than
+// Options.MaxBytes of text, or took more than Options.MaxSteps join steps. A more
+// selective rule or a smaller base is the remedy; asking again unchanged will fail
+// again.
 var ErrTooLarge = errors.New("datalog: derivation too large")
 
-// TooLarge is the refusal itself: the relation that crossed the bound, and the
-// measure, counted over every derived relation as the tuples' text.
+// TooLarge is the refusal itself. Relation is the one being derived when a bound was
+// crossed. Tuples and Bytes count every derived relation's tuples and their JSON text;
+// Steps counts join steps. The bound crossed is the one whose Max field is set and
+// exceeded.
 type TooLarge struct {
 	Relation string
 	Tuples   int
 	Bytes    int
 	MaxBytes int
+	Steps    int
+	MaxSteps int
 }
 
 func (e *TooLarge) Error() string {
-	return fmt.Sprintf("derivation too large: %d derived tuples encode to more than %d bytes (Options.MaxBytes), at %s",
-		e.Tuples, e.MaxBytes, e.Relation)
+	if e.MaxSteps > 0 && e.Steps > e.MaxSteps {
+		return fmt.Sprintf("derivation too large: %d join steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
+			"make a rule more selective or the base smaller", e.Steps, e.MaxSteps, e.Relation)
+	}
+	return fmt.Sprintf("derivation too large: %d derived tuples encode to more than %d bytes (Options.MaxBytes), at %s; "+
+		"make a rule more selective or the base smaller", e.Tuples, e.MaxBytes, e.Relation)
 }
 
 func (e *TooLarge) Is(target error) bool { return target == ErrTooLarge }
@@ -111,6 +121,10 @@ type Options struct {
 	// included, since derived relations can be larger than the input. Zero is no
 	// bound; over it, Evaluate returns *TooLarge.
 	MaxBytes int
+	// MaxSteps bounds the work: join steps (tuples visited) over the whole evaluation.
+	// MaxBytes cannot see a rule that visits a great deal and derives little, such as a
+	// cross product of duplicates. Zero is no bound; over it, Evaluate returns *TooLarge.
+	MaxSteps int
 	// Proofs records, for each derived tuple, the first derivation that produced it.
 	// It touches the hot loop, so it is off unless asked for.
 	Proofs bool
@@ -119,9 +133,13 @@ type Options struct {
 // Evaluate runs a plan over a base to its fixpoint, stratum by stratum, semi-naive
 // within each: after the first round only the tuples new in the last round are
 // joined again. It reads values and writes nothing, and the base is never changed, so
-// calls may share one. The deadline on ctx and opts.MaxBytes bound it. A base built
-// under a schema other than the plan's is ErrInvalid.
+// calls may share one. The deadline on ctx, opts.MaxBytes and opts.MaxSteps bound it.
+// A base built under a schema other than the plan's is ErrInvalid. A context already done fails
+// at once, before any join, so the deadline is honoured however small the evaluation.
 func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("datalog: evaluation stopped: %w", err)
+	}
 	if err := plan.accepts(base); err != nil {
 		return Result{}, err
 	}
@@ -180,8 +198,18 @@ func (ev *evaluator) stratum(rules []rule) error {
 	return nil
 }
 
+// merge adds a round's new tuples to the database, relations in name order. Each
+// relation's tuples are already in derivation order; walking the relations sorted
+// keeps the evaluation a function of its inputs, with no map order in it, which a
+// proof of "the first derivation" relies on.
 func (ev *evaluator) merge(delta map[string]*relation) {
-	for name, rel := range delta {
+	names := make([]string, 0, len(delta))
+	for name := range delta {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		rel := delta[name]
 		for _, t := range rel.tuples {
 			ev.db[name].add(t)
 		}
@@ -223,7 +251,7 @@ func (ev *evaluator) count(relation string, t Tuple) {
 	ev.tuples++
 	ev.bytes += n
 	if ev.opts.MaxBytes > 0 && ev.bytes > ev.opts.MaxBytes && ev.over == nil {
-		ev.over = &TooLarge{Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, MaxBytes: ev.opts.MaxBytes}
+		ev.over = &TooLarge{Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, MaxBytes: ev.opts.MaxBytes, Steps: ev.steps}
 	}
 }
 
@@ -255,10 +283,8 @@ func (ev *evaluator) join(r rule, i int, env map[string]Const, delta *relation, 
 		if ev.over != nil {
 			return ev.over
 		}
-		if ev.steps++; ev.steps%stepsPerDeadlineCheck == 0 {
-			if err := ev.ctx.Err(); err != nil {
-				return fmt.Errorf("datalog: evaluation stopped: %w", err)
-			}
+		if err := ev.step(r.Head.Name); err != nil {
+			return err
 		}
 		bound, ok := bind(rel.tuples[idx], l.Atom.Args, env)
 		if !ok {
@@ -269,6 +295,22 @@ func (ev *evaluator) join(r rule, i int, env map[string]Const, delta *relation, 
 		}
 		for _, v := range bound {
 			delete(env, v)
+		}
+	}
+	return nil
+}
+
+// step charges one join step: against MaxSteps, and every stepsPerDeadlineCheck-th
+// time against the deadline.
+func (ev *evaluator) step(relation string) error {
+	ev.steps++
+	if ev.opts.MaxSteps > 0 && ev.steps > ev.opts.MaxSteps {
+		ev.over = &TooLarge{Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, Steps: ev.steps, MaxSteps: ev.opts.MaxSteps}
+		return ev.over
+	}
+	if ev.steps%stepsPerDeadlineCheck == 0 {
+		if err := ev.ctx.Err(); err != nil {
+			return fmt.Errorf("datalog: evaluation stopped: %w", err)
 		}
 	}
 	return nil

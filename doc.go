@@ -17,11 +17,12 @@
 //
 // Evaluate runs a plan semi-naively to a fixpoint. It always terminates: there are no
 // function symbols, and no built-in produces a value, so the derived relations are
-// finite. A deadline on the context and a byte bound on what is derived stop it
-// earlier, with the context's error or ErrTooLarge. An Answer (Result.Relation) is a
-// value: its tuples sorted, serialised one way and hashed, so two evaluations of one
-// program over one base answer identically. A RuleSet names a program, versions it and
-// hashes its text, so an answer can say which rules stood behind it.
+// finite. A deadline on the context, a byte bound on what is derived and a step bound
+// on the work to derive it stop it earlier, with the context's error or ErrTooLarge.
+// An Answer (Result.Relation) is a value: its tuples sorted, serialised one way and
+// hashed, so two evaluations of one program over one base answer identically. A
+// RuleSet names a program, versions it and hashes its text, so an answer can say
+// which rules stood behind it.
 //
 // Nothing here reads a file or the network, keeps state between calls, or knows what
 // the relations mean. The package owns the evaluation; the caller owns the vocabulary.

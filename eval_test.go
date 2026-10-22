@@ -164,3 +164,56 @@ func TestEvaluate_ProofsFlagIsAccepted(t *testing.T) {
 		t.Error("Proof reported a derivation before recording exists")
 	}
 }
+
+// A bound on bytes cannot see work that derives little: a cross product whose every
+// row is a duplicate. Options.MaxSteps stops it, and the refusal says which bound.
+func TestEvaluate_MaxSteps(t *testing.T) {
+	t.Parallel()
+	var facts []datalog.Fact
+	for i := 0; i < 30; i++ {
+		facts = append(facts, fact("node", fmt.Sprint("n", i)))
+	}
+	base := newBase(t, facts...)
+	text := `dup(A) :- node(A), node(B), node(C).`
+	_, err := tryRun(base, text, "dup", datalog.Options{MaxBytes: 1 << 20, MaxSteps: 1000})
+	var big *datalog.TooLarge
+	if !errors.Is(err, datalog.ErrTooLarge) || !errors.As(err, &big) {
+		t.Fatalf("Evaluate = %v, want ErrTooLarge", err)
+	}
+	if big.MaxSteps != 1000 || big.Steps != 1001 || big.Relation != "dup" {
+		t.Errorf("TooLarge = %+v, want 1001 steps over 1000 at dup", *big)
+	}
+	for _, want := range []string{"1001 join steps", "Options.MaxSteps", "more selective"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if ans, err := tryRun(base, text, "dup", datalog.Options{MaxSteps: 100000}); err != nil || ans.Len() != 30 {
+		t.Errorf("under the bound = %v, %d tuples; want 30", err, ans.Len())
+	}
+	if _, err := tryRun(base, text, "dup", datalog.Options{}); err != nil {
+		t.Errorf("no bound = %v, want none", err)
+	}
+}
+
+// The deadline is looked at before the first join, not only every few thousand steps,
+// so a small evaluation on a context that is already done fails.
+func TestEvaluate_CancelledContextFailsASmallEvaluation(t *testing.T) {
+	t.Parallel()
+	plan, err := datalog.Compile(testSchema, parse(t, `n(X) :- node(X).`))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	base := newBase(t, fact("node", "a"), fact("node", "b"), fact("node", "c"))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = datalog.Evaluate(ctx, plan, base, datalog.Options{})
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "datalog: evaluation stopped") {
+		t.Errorf("Evaluate on a cancelled context = %v, want context.Canceled from datalog: evaluation stopped", err)
+	}
+	expired, stop := context.WithTimeout(context.Background(), 0)
+	defer stop()
+	if _, err := datalog.Evaluate(expired, plan, base, datalog.Options{}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Evaluate past its deadline = %v, want context.DeadlineExceeded", err)
+	}
+}

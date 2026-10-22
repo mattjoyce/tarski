@@ -2,6 +2,7 @@ package datalog
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -96,4 +97,52 @@ func mustParse(t *testing.T, text string) Program {
 		t.Fatalf("Parse: %v", err)
 	}
 	return p
+}
+
+// The order tuples enter every derived relation is a function of the plan and the
+// base, not of map order: several rules derive the same relations, in a recursion, and
+// repeated evaluations agree tuple for tuple.
+func TestEvaluate_DerivationOrderIsDeterministic(t *testing.T) {
+	t.Parallel()
+	var facts []Fact
+	for i := 0; i < 8; i++ {
+		facts = append(facts, Fact{"edge", str(string(rune('a'+i)), string(rune('a'+(i+1)%8)))},
+			Fact{"edge", str(string(rune('a'+i)), string(rune('a'+(i+3)%8)))}, Fact{"node", str(string(rune('a' + i)))})
+	}
+	base := internalBase(t, facts...)
+	plan, err := Compile(Schema{Arities: map[string]int{"edge": 2, "node": 1}}, mustParse(t, `
+		step(X, Y) :- edge(X, Y).
+		step(X, Y) :- edge(Y, X).
+		reach(X, Y) :- step(X, Y).
+		reach(X, Z) :- reach(X, Y), step(Y, Z).
+		back(X, Y) :- reach(Y, X), node(X).
+		both(X, Y) :- reach(X, Y), back(X, Y).`))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	order := func() map[string][]string {
+		res, err := Evaluate(context.Background(), plan, base, Options{})
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		out := map[string][]string{}
+		for name := range plan.idb {
+			for _, tup := range res.relations[name].tuples {
+				out[name] = append(out[name], tup.key())
+			}
+		}
+		return out
+	}
+	first := order()
+	if len(first["both"]) == 0 {
+		t.Fatal("the program derived nothing; the test proves nothing")
+	}
+	for i := 0; i < 25; i++ {
+		got := order()
+		for name, want := range first {
+			if strings.Join(got[name], "|") != strings.Join(want, "|") {
+				t.Fatalf("run %d: %s derived in a different order", i, name)
+			}
+		}
+	}
 }
