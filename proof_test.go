@@ -277,3 +277,59 @@ func BenchmarkEvaluate(b *testing.B) {
 		})
 	}
 }
+
+// A holder who rewrites a proof's rule deeply does not reach the plan: the next
+// evaluation on it gives the same answer and the same proofs.
+func TestProof_RuleIsACopy(t *testing.T) {
+	t.Parallel()
+	b, err := datalog.NewBase(testSchema, append(chain(4), fact("node", "n1"), fact("score", "n1", 3))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := parse(t, reachRules+`pick(N) :- node(N), score(N, S), S > 1, not edge(N, "zz").`)
+	plan, err := datalog.Compile(testSchema, prog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := datalog.Options{Proofs: true}
+	eval := func() datalog.Result {
+		res, err := datalog.Evaluate(context.Background(), plan, b, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	want := eval()
+	wantAns, _ := want.Relation("reaches")
+	wantPick, _ := want.Proof("pick", tup(fact("pick", "n1")))
+	wantReach, _ := want.Proof("reaches", tup(fact("reaches", "n0", "n4")))
+
+	scribble := func(r *datalog.Rule) {
+		r.Head.Name, r.Head.Args[0].Var, r.Line = "x", "Q", -1
+		for i := range r.Body {
+			r.Body[i].Negated = !r.Body[i].Negated
+			if a := r.Body[i].Atom; a != nil {
+				a.Name = "x"
+				a.Args[0].Var = "Q"
+			}
+			if c := r.Body[i].Compare; c != nil {
+				c.Op = "<"
+			}
+		}
+	}
+	for _, p := range []datalog.Proof{wantPick, wantReach, wantReach.Body[0]} {
+		scribble(p.Rule)
+	}
+
+	got := eval()
+	if ans, _ := got.Relation("reaches"); ans.Hash() != wantAns.Hash() {
+		t.Error("answer changed after a proof's rule was rewritten")
+	}
+	again, _ := got.Proof("pick", tup(fact("pick", "n1")))
+	if again.Rule.Head.Name != "pick" || again.Rule.Line != 4 || again.Rule.Body[0].Negated {
+		t.Errorf("the plan's rule was reached through a proof: %+v", again.Rule)
+	}
+	if reach, _ := got.Proof("reaches", tup(fact("reaches", "n0", "n4"))); reach.Rule.Head.Name != "reaches" || reach.Rule.Body[0].Atom.Name != "reaches" {
+		t.Errorf("the plan's rule was reached through a proof: %+v", reach.Rule)
+	}
+}
