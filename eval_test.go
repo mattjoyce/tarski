@@ -149,7 +149,7 @@ func TestEvaluate_MaxBytes(t *testing.T) {
 	}
 }
 
-// Options.Proofs is accepted; recording is pending, so Proof reports false.
+// Options.Proofs is accepted and a derived tuple then has a proof (see proof_test.go).
 func TestEvaluate_ProofsFlagIsAccepted(t *testing.T) {
 	t.Parallel()
 	plan, err := datalog.Compile(testSchema, parse(t, `n(X) :- node(X).`))
@@ -160,8 +160,8 @@ func TestEvaluate_ProofsFlagIsAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	if _, ok := res.Proof("n", datalog.Tuple{datalog.String("a")}); ok {
-		t.Error("Proof reported a derivation before recording exists")
+	if p, ok := res.Proof("n", datalog.Tuple{datalog.String("a")}); !ok || p.Rule == nil {
+		t.Error("a derived tuple has no proof under Options.Proofs")
 	}
 }
 

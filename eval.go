@@ -113,6 +113,7 @@ func (r *relation) candidates(pos int, c Const) []int {
 // fixpoint.
 type Result struct {
 	relations map[string]*relation
+	proofs    map[string]map[string]*derivation // nil unless Options.Proofs
 }
 
 // Options bounds and shapes one evaluation.
@@ -144,6 +145,9 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 		return Result{}, err
 	}
 	ev := &evaluator{ctx: ctx, db: map[string]*relation{}, opts: opts}
+	if opts.Proofs {
+		ev.proofs = map[string]map[string]*derivation{}
+	}
 	for name, rel := range base.relations {
 		ev.db[name] = rel
 	}
@@ -155,13 +159,19 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 			return Result{}, err
 		}
 	}
-	return Result{relations: ev.db}, nil
+	return Result{relations: ev.db, proofs: ev.proofs}, nil
 }
 
 type evaluator struct {
 	ctx   context.Context
 	db    map[string]*relation
 	steps int
+
+	// Proofs only: the first derivation of each derived tuple, by relation then tuple
+	// key, and the positive body tuples matched so far in the rule being joined. Both
+	// stay nil when Proofs is off, so the join pays one nil check and nothing else.
+	proofs map[string]map[string]*derivation
+	stack  []bodyTuple
 
 	opts          Options
 	bytes, tuples int
@@ -171,8 +181,8 @@ type evaluator struct {
 // stratum evaluates one stratum's rules to a fixpoint.
 func (ev *evaluator) stratum(rules []rule) error {
 	delta := map[string]*relation{}
-	for _, r := range rules {
-		if err := ev.apply(r, nil, -1, delta); err != nil {
+	for i := range rules {
+		if err := ev.apply(&rules[i], nil, -1, delta); err != nil {
 			return err
 		}
 		if ev.over != nil {
@@ -182,7 +192,8 @@ func (ev *evaluator) stratum(rules []rule) error {
 	for len(delta) > 0 {
 		ev.merge(delta)
 		next := map[string]*relation{}
-		for _, r := range rules {
+		for i := range rules {
+			r := &rules[i] // a pointer into the plan, which a proof's Rule shares
 			for _, pos := range r.recursive {
 				d, ok := delta[r.ordered[pos].Atom.Name]
 				if !ok {
@@ -218,8 +229,11 @@ func (ev *evaluator) merge(delta map[string]*relation) {
 
 // apply derives r's head once over the database, with the positive atom at deltaPos
 // (if any) read from delta instead, and collects tuples not yet derived into out.
-func (ev *evaluator) apply(r rule, delta *relation, deltaPos int, out map[string]*relation) error {
+func (ev *evaluator) apply(r *rule, delta *relation, deltaPos int, out map[string]*relation) error {
 	env := map[string]Const{}
+	if ev.proofs != nil {
+		ev.stack = make([]bodyTuple, 0, len(r.ordered))
+	}
 	return ev.join(r, 0, env, delta, deltaPos, func() {
 		t := make(Tuple, len(r.Head.Args))
 		for i, a := range r.Head.Args {
@@ -235,8 +249,40 @@ func (ev *evaluator) apply(r rule, delta *relation, deltaPos int, out map[string
 		}
 		if rel.add(t) {
 			ev.count(r.Head.Name, t)
+			if ev.proofs != nil {
+				ev.record(r, t)
+			}
 		}
 	})
+}
+
+// derivation is one way a tuple came to be: the rule, and the positive body tuples
+// in the order written.
+type derivation struct {
+	rule *Rule
+	body []bodyTuple
+}
+
+type bodyTuple struct {
+	relation string
+	tuple    Tuple
+}
+
+// record keeps the derivation that just added t. apply reaches it only for a tuple
+// neither the database nor this round had, so what is kept is the first derivation. A
+// body tuple was in the database or the last round's delta, hence derived strictly
+// earlier, which is what keeps a proof acyclic.
+func (ev *evaluator) record(r *rule, t Tuple) {
+	by, ok := ev.proofs[r.Head.Name]
+	if !ok {
+		by = map[string]*derivation{}
+		ev.proofs[r.Head.Name] = by
+	}
+	d := &derivation{rule: &r.Rule}
+	if len(ev.stack) > 0 {
+		d.body = append([]bodyTuple(nil), ev.stack...)
+	}
+	by[t.key()] = d
 }
 
 // count charges one derived tuple against the bound, as the bytes its JSON takes.
@@ -257,7 +303,7 @@ func (ev *evaluator) count(relation string, t Tuple) {
 
 // join extends env through the body literals from i on, calling emit for every
 // complete binding.
-func (ev *evaluator) join(r rule, i int, env map[string]Const, delta *relation, deltaPos int, emit func()) error {
+func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation, deltaPos int, emit func()) error {
 	if i == len(r.ordered) {
 		emit()
 		return nil
@@ -290,8 +336,14 @@ func (ev *evaluator) join(r rule, i int, env map[string]Const, delta *relation, 
 		if !ok {
 			continue
 		}
+		if ev.proofs != nil {
+			ev.stack = append(ev.stack, bodyTuple{l.Atom.Name, rel.tuples[idx]})
+		}
 		if err := ev.join(r, i+1, env, delta, deltaPos, emit); err != nil {
 			return err
+		}
+		if ev.proofs != nil {
+			ev.stack = ev.stack[:len(ev.stack)-1]
 		}
 		for _, v := range bound {
 			delete(env, v)
