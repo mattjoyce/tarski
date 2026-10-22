@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -26,8 +27,12 @@ func (r Result) Relation(name string) (Answer, error) {
 	if !ok {
 		return Answer{}, fmt.Errorf("%w: no relation %s in the result", ErrInvalid, name)
 	}
+	// Each tuple is cloned: a base relation's tuples are shared by every evaluation, and
+	// an answer is a value its holder may do what they like with.
 	tuples := make([]Tuple, len(rel.tuples))
-	copy(tuples, rel.tuples)
+	for i, t := range rel.tuples {
+		tuples[i] = slices.Clone(t)
+	}
 	sort.Slice(tuples, func(i, j int) bool { return tupleLess(tuples[i], tuples[j]) })
 	a := Answer{Relation: name, Tuples: tuples}
 	if err := a.seal(); err != nil {
@@ -69,8 +74,8 @@ func (a *Answer) UnmarshalJSON(b []byte) error {
 // Len is how many tuples the answer holds.
 func (a Answer) Len() int { return len(a.Tuples) }
 
-// Bytes is the answer's one serialisation.
-func (a Answer) Bytes() []byte { return a.bytes }
+// Bytes is the answer's one serialisation, as a copy the caller may change.
+func (a Answer) Bytes() []byte { return slices.Clone(a.bytes) }
 
 // Hash is "sha256:<hex>" over Bytes.
 func (a Answer) Hash() string { return a.hash }

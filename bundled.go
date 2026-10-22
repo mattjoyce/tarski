@@ -34,11 +34,30 @@ func NewRuleSet(name string, version int, text string) (RuleSet, error) {
 	if err != nil {
 		return RuleSet{}, fmt.Errorf("rule set %s/%d: %w", name, version, err)
 	}
-	sum := sha256.Sum256([]byte(text))
-	return RuleSet{Name: name, Version: version, Hash: "sha256:" + hex.EncodeToString(sum[:]), Program: p}, nil
+	return RuleSet{Name: name, Version: version, Hash: textHash(text), Program: p}, nil
 }
 
 // ID is "name/version hash", the string a decision carries.
 func (s RuleSet) ID() string {
 	return fmt.Sprintf("%s/%d %s", s.Name, s.Version, s.Hash)
+}
+
+// Verify checks that the rule set is what its hash says: the hash is recomputed over
+// the program's text and compared. A set built by hand, or edited after NewRuleSet,
+// would otherwise put in a receipt a hash that matches neither the text nor the rules
+// that ran. A program with no text cannot be verified and is refused.
+func (s RuleSet) Verify() error {
+	if s.Program.Text == "" {
+		return fmt.Errorf("%w: rule set %s/%d has no program text to verify its hash against", ErrInvalid, s.Name, s.Version)
+	}
+	if want := textHash(s.Program.Text); s.Hash != want {
+		return fmt.Errorf("%w: rule set %s/%d: hash %q is not the hash of its text (%s)", ErrInvalid, s.Name, s.Version, s.Hash, want)
+	}
+	return nil
+}
+
+// textHash is "sha256:<hex>" over text, the one shape a rule-set hash takes.
+func textHash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

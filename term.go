@@ -3,7 +3,9 @@ package datalog
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -34,11 +36,19 @@ func String(s string) Const { return Const{kind: KindString, s: s} }
 // Bool makes a boolean constant.
 func Bool(b bool) Const { return Const{kind: KindBool, s: strconv.FormatBool(b)} }
 
-// Number makes a number constant from a JSON lexeme.
+// Number makes a number constant from a JSON lexeme. A lexeme that is not a finite
+// number is refused: NaN would equal everything under compare, and Inf has no JSON
+// text. Negative zero is zero, so that identity and comparison agree on it.
 func Number(lexeme string) (Const, error) {
 	n, err := strconv.ParseFloat(lexeme, 64)
-	if err != nil {
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return Const{}, fmt.Errorf("%w: %q is not a number", ErrSyntax, lexeme)
+	}
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return Const{}, fmt.Errorf("%w: %q is not a finite number", ErrSyntax, lexeme)
+	}
+	if n == 0 {
+		n = 0 // not -0
 	}
 	return Const{kind: KindNumber, s: strconv.FormatFloat(n, 'g', -1, 64), n: n}, nil
 }
@@ -85,9 +95,11 @@ func (c *Const) UnmarshalJSON(b []byte) error {
 }
 
 // key is the constant's identity for sets and joins. The kind prefix keeps the
-// string "1" apart from the number 1.
+// string "1" apart from the number 1, and the length prefix makes the key
+// self-delimiting, so a tuple's key is the concatenation of its constants' and a NUL
+// (or any byte) inside a string cannot move a boundary.
 func (c Const) key() string {
-	return string(rune('0'+c.kind)) + c.s
+	return string(rune('0'+c.kind)) + strconv.Itoa(len(c.s)) + ":" + c.s
 }
 
 // compare orders two constants of one kind: strings lexically (fact-times are
@@ -128,7 +140,6 @@ func (t Tuple) key() string {
 	var b strings.Builder
 	for _, c := range t {
 		b.WriteString(c.key())
-		b.WriteByte(0)
 	}
 	return b.String()
 }

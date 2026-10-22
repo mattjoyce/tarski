@@ -18,6 +18,7 @@ type Plan struct {
 	strata [][]rule
 	idb    map[string]bool
 	base   map[string]int // the schema's relations and arities, which a Base must match
+	arity  map[string]int // every relation, base and derived
 }
 
 // Schema names the base relations a base may hold and, per relation, an optional
@@ -66,7 +67,15 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	for name, n := range schema.Arities {
 		base[name] = n
 	}
-	return Plan{strata: strata, idb: idb, base: base}, nil
+	return Plan{strata: strata, idb: idb, base: base, arity: arities}, nil
+}
+
+// Arity is the arity of a relation the plan knows, base or derived. ok is false for a
+// name it does not: a consumer uses it to check that a rule set defines the relations
+// the consumer will read, with the arity it will read them at.
+func (p Plan) Arity(name string) (int, bool) {
+	n, ok := p.arity[name]
+	return n, ok
 }
 
 // checkSchema refuses a schema that could not hold a relation: a built-in's name, a

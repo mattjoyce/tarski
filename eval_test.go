@@ -217,3 +217,64 @@ func TestEvaluate_CancelledContextFailsASmallEvaluation(t *testing.T) {
 		t.Errorf("Evaluate past its deadline = %v, want context.DeadlineExceeded", err)
 	}
 }
+
+// A bound crossed by the very last tuple of the last round still ends in *TooLarge.
+// Round one derives r(1); round two derives r(2), the last candidate of its join and
+// the crossing tuple; round three's only rule asks for r(1) in the delta, finds none,
+// and visits nothing, so no join is left to notice. Evaluate must.
+func TestEvaluate_MaxBytesCrossedByTheLastTuple(t *testing.T) {
+	t.Parallel()
+	base := newBase(t, fact("node", 1), fact("edge", 1, 2))
+	text := `r(1) :- node(1). r(Y) :- r(1), edge(1, Y).`
+	if ans, err := tryRun(base, text, "r", datalog.Options{}); err != nil || ans.Len() != 2 {
+		t.Fatalf("unbounded = %v, %d tuples; want r(1) and r(2)", err, ans.Len())
+	}
+	// Each r tuple is charged 3 bytes: 6 in all, so a bound of 5 is crossed by r(2).
+	_, err := tryRun(base, text, "r", datalog.Options{MaxBytes: 5})
+	if !errors.Is(err, datalog.ErrTooLarge) {
+		t.Errorf("Evaluate over MaxBytes = %v, want ErrTooLarge", err)
+	}
+}
+
+// A negation probe is work like a join and is charged like one: scanning a hub's
+// many edges for one that is not there is stopped by MaxSteps.
+func TestEvaluate_MaxStepsCoversNegationProbes(t *testing.T) {
+	t.Parallel()
+	facts := []datalog.Fact{fact("node", "n0")}
+	for i := 0; i < 500; i++ {
+		facts = append(facts, fact("edge", "hub", fmt.Sprint("n", i)))
+	}
+	base := newBase(t, facts...)
+	text := `ok(X) :- node(X), not edge("hub", "zzz").`
+	_, err := tryRun(base, text, "ok", datalog.Options{MaxSteps: 100})
+	if !errors.Is(err, datalog.ErrTooLarge) {
+		t.Errorf("a 500-candidate probe under MaxSteps 100 = %v, want ErrTooLarge", err)
+	}
+	if ans, err := tryRun(base, text, "ok", datalog.Options{MaxSteps: 10000}); err != nil || ans.Len() != 1 {
+		t.Errorf("under the bound = %v, %d tuples; want 1", err, ans.Len())
+	}
+}
+
+// An Answer is a value its holder owns: writing through its tuples or its bytes does
+// not reach the frozen base every other evaluation reads.
+func TestAnswer_DoesNotAliasTheBase(t *testing.T) {
+	t.Parallel()
+	base := newBase(t, fact("edge", "a", "b"), fact("edge", "b", "c"))
+	text := `e(X, Y) :- edge(X, Y).`
+	first, err := tryRun(base, text, "e", datalog.Options{})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	hash, before := first.Hash(), rows(first)
+	first.Tuples[0][0] = datalog.String("tampered")
+	first.Tuples[1] = nil
+	first.Bytes()[0] = 'X'
+	again, err := tryRun(base, text, "e", datalog.Options{})
+	if err != nil || again.Hash() != hash || !same(rows(again), before) {
+		t.Errorf("after writing through an answer: %v, hash %s (was %s), rows %v (were %v)",
+			err, again.Hash(), hash, rows(again), before)
+	}
+	if again.Bytes()[0] != '{' || first.Bytes()[0] != '{' {
+		t.Error("Bytes() is not a copy: a write to it changed an answer")
+	}
+}

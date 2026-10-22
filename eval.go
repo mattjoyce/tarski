@@ -14,9 +14,9 @@ import (
 var ErrTooLarge = errors.New("datalog: derivation too large")
 
 // TooLarge is the refusal itself. Relation is the one being derived when a bound was
-// crossed. Tuples and Bytes count every derived relation's tuples and their JSON text;
-// Steps counts join steps. The bound crossed is the one whose Max field is set and
-// exceeded.
+// crossed. Tuples and Bytes count every derived relation's tuples and, approximately,
+// their JSON text; Steps counts join steps. The bound crossed is the one whose Max
+// field is set and exceeded.
 type TooLarge struct {
 	Relation string
 	Tuples   int
@@ -118,9 +118,9 @@ type Result struct {
 
 // Options bounds and shapes one evaluation.
 type Options struct {
-	// MaxBytes is a bound over every derived tuple's JSON text, intermediate relations
-	// included, since derived relations can be larger than the input. Zero is no
-	// bound; over it, Evaluate returns *TooLarge.
+	// MaxBytes is a bound over approximately the JSON text of every derived tuple
+	// (lengths unescaped), intermediate relations included, since derived relations can
+	// be larger than the input. Zero is no bound; over it, Evaluate returns *TooLarge.
 	MaxBytes int
 	// MaxSteps bounds the work: join steps (tuples visited) over the whole evaluation.
 	// MaxBytes cannot see a rule that visits a great deal and derives little, such as a
@@ -158,6 +158,11 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 		if err := ev.stratum(stratum); err != nil {
 			return Result{}, err
 		}
+	}
+	// A bound crossed by the last tuple of the last round raises no error inside the
+	// join; it is raised here, so MaxBytes is never exceeded with a nil error.
+	if ev.over != nil {
+		return Result{}, ev.over
 	}
 	return Result{relations: ev.db, proofs: ev.proofs}, nil
 }
@@ -285,7 +290,10 @@ func (ev *evaluator) record(r *rule, t Tuple) {
 	by[t.key()] = d
 }
 
-// count charges one derived tuple against the bound, as the bytes its JSON takes.
+// count charges one derived tuple against the byte bound. The charge approximates the
+// tuple's JSON text: brackets, commas, the lengths of the constants and two quotes per
+// string, but not the escapes encoding/json adds, so the real text can be somewhat
+// larger.
 func (ev *evaluator) count(relation string, t Tuple) {
 	n := 1 + len(t) // brackets and commas
 	for _, c := range t {
@@ -316,7 +324,11 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation,
 		}
 		return nil
 	case l.Negated:
-		if ev.exists(ev.db[l.Atom.Name], l.Atom.Args, env) {
+		found, err := ev.exists(r.Head.Name, ev.db[l.Atom.Name], l.Atom.Args, env)
+		if err != nil {
+			return err
+		}
+		if found {
 			return nil
 		}
 		return ev.join(r, i+1, env, delta, deltaPos, emit)
@@ -373,17 +385,22 @@ func (ev *evaluator) step(relation string) error {
 // cancelled evaluation stops, against the cost of asking.
 const stepsPerDeadlineCheck = 1024
 
-// exists reports whether some tuple of rel matches args under env.
-func (ev *evaluator) exists(rel *relation, args []Term, env map[string]Const) bool {
+// exists reports whether some tuple of rel matches args under env. Each candidate it
+// tries is a join step like any other, charged against MaxSteps and the deadline: a
+// negation can scan as much as a join, and an error here is the bound's, not a miss.
+func (ev *evaluator) exists(head string, rel *relation, args []Term, env map[string]Const) (bool, error) {
 	for _, idx := range matching(rel, args, env) {
+		if err := ev.step(head); err != nil {
+			return false, err
+		}
 		if bound, ok := bind(rel.tuples[idx], args, env); ok {
 			for _, v := range bound {
 				delete(env, v)
 			}
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // matching is the tuples of rel worth trying against args under env: the ones an

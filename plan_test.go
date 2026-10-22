@@ -145,3 +145,44 @@ func TestNewRuleSet_Refuses(t *testing.T) {
 		}
 	}
 }
+
+// Verify holds a rule set to its hash: a built one passes, and one edited or built by
+// hand does not.
+func TestRuleSet_Verify(t *testing.T) {
+	t.Parallel()
+	rs, err := datalog.NewRuleSet("demo", 1, "up(X) :- node(X).\n")
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	if err := rs.Verify(); err != nil {
+		t.Errorf("Verify on a built set = %v", err)
+	}
+	edited := rs
+	edited.Program.Text += "% edited\n"
+	forged := rs
+	forged.Hash = "sha256:" + strings.Repeat("0", 64)
+	for name, bad := range map[string]datalog.RuleSet{
+		"edited text": edited, "forged hash": forged, "no text": {Name: "x", Hash: rs.Hash},
+	} {
+		if err := bad.Verify(); !errors.Is(err, datalog.ErrInvalid) {
+			t.Errorf("%s: Verify = %v, want ErrInvalid", name, err)
+		}
+	}
+}
+
+// Plan.Arity answers for base and derived relations and for nothing else.
+func TestPlan_Arity(t *testing.T) {
+	t.Parallel()
+	plan, err := datalog.Compile(testSchema, parse(t, `hook/3. up(X, Y) :- edge(X, Y).`))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	for name, want := range map[string]int{"edge": 2, "node": 1, "up": 2, "hook": 3} {
+		if n, ok := plan.Arity(name); !ok || n != want {
+			t.Errorf("Arity(%s) = %d, %v; want %d, true", name, n, ok, want)
+		}
+	}
+	if n, ok := plan.Arity("nothing"); ok || n != 0 {
+		t.Errorf("Arity(nothing) = %d, %v; want 0, false", n, ok)
+	}
+}

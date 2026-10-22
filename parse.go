@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
+	"unicode/utf8"
 )
 
 // ErrSyntax is returned for text that is not a program.
@@ -124,15 +124,17 @@ func (lx *lexer) next() (token, error) {
 		return token{kind: tokEOF, line: lx.line}, nil
 	}
 	start, line := lx.pos, lx.line
-	r := rune(lx.src[lx.pos])
+	// Decode a whole rune: a name is ASCII, and anything else is reported as the
+	// character it is, not as one byte of its encoding.
+	r, _ := utf8.DecodeRuneInString(lx.src[lx.pos:])
 	switch {
 	case r == '"':
 		return lx.str(line)
-	case unicode.IsLower(r):
+	case r >= 'a' && r <= 'z':
 		return token{tokName, lx.word(), line}, nil
-	case unicode.IsUpper(r) || r == '_':
+	case r >= 'A' && r <= 'Z' || r == '_':
 		return token{tokVar, lx.word(), line}, nil
-	case unicode.IsDigit(r) || r == '-':
+	case isDigit(r) || r == '-':
 		lx.number()
 		return token{tokNumber, lx.src[start:lx.pos], line}, nil
 	}
@@ -168,7 +170,7 @@ func (lx *lexer) skipSpace() {
 // exponent.
 func (lx *lexer) number() {
 	digits := func() {
-		for lx.pos < len(lx.src) && unicode.IsDigit(rune(lx.src[lx.pos])) {
+		for lx.pos < len(lx.src) && isDigit(rune(lx.src[lx.pos])) {
 			lx.pos++
 		}
 	}
@@ -176,7 +178,7 @@ func (lx *lexer) number() {
 		lx.pos++
 	}
 	digits()
-	if lx.pos+1 < len(lx.src) && lx.src[lx.pos] == '.' && unicode.IsDigit(rune(lx.src[lx.pos+1])) {
+	if lx.pos+1 < len(lx.src) && lx.src[lx.pos] == '.' && isDigit(rune(lx.src[lx.pos+1])) {
 		lx.pos++
 		digits()
 	}
@@ -193,7 +195,7 @@ func (lx *lexer) word() string {
 	start := lx.pos
 	for lx.pos < len(lx.src) {
 		c := rune(lx.src[lx.pos])
-		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != '_' {
+		if !isLetter(c) && !isDigit(c) && c != '_' {
 			break
 		}
 		lx.pos++
@@ -394,3 +396,8 @@ func (p *parser) term() (Term, error) {
 	}
 	return Term{}, p.fail("expected a variable or a constant")
 }
+
+// isDigit and isLetter are ASCII only: a name is a name in every locale, and a byte of
+// a multi-byte character must never be read as a Latin-1 letter.
+func isDigit(r rune) bool  { return r >= '0' && r <= '9' }
+func isLetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"sync"
@@ -272,5 +273,69 @@ func TestBase_WithRunsTheChecks(t *testing.T) {
 	}
 	if _, err := standing.With(fact("node", "fine")); err != nil {
 		t.Errorf("With a fact the check allows = %v", err)
+	}
+}
+
+// The postcondition With promises: a base extended is observationally the base built
+// over the union. Random fact sets (a fixed seed, so a failure replays), split at
+// random into standing facts and two later batches, with duplicates across them: every
+// relation holds the same number of tuples, and a program that reads them all derives
+// the same answer, by hash.
+func TestBase_WithEqualsNewBaseOverTheUnion(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewPCG(20261022, 7))
+	text := `
+		reach(X, Y) :- edge(X, Y).
+		reach(X, Z) :- reach(X, Y), edge(Y, Z).
+		lone(X) :- node(X), not reach(X, _).
+		top(X, S) :- score(X, S), S >= 2, not flag(X, true).`
+	relations := []string{"edge", "node", "score", "flag"}
+	name := func() string { return fmt.Sprint("n", rng.IntN(6)) }
+	random := func() datalog.Fact {
+		switch rel := relations[rng.IntN(len(relations))]; rel {
+		case "edge":
+			return fact(rel, name(), name())
+		case "node":
+			return fact(rel, name())
+		case "score":
+			return fact(rel, name(), rng.IntN(4))
+		default:
+			return fact(rel, name(), rng.IntN(2) == 0)
+		}
+	}
+	for i := 0; i < 200; i++ {
+		var standing, first, second []datalog.Fact
+		for range rng.IntN(25) {
+			standing = append(standing, random())
+		}
+		for range rng.IntN(10) {
+			first = append(first, random())
+		}
+		for range rng.IntN(10) {
+			second = append(second, random())
+		}
+		if len(standing) > 0 && rng.IntN(2) == 0 {
+			first = append(first, standing[rng.IntN(len(standing))]) // a fact both already hold
+		}
+		extended, err := newBase(t, standing...).With(first...)
+		if err == nil {
+			extended, err = extended.With(second...)
+		}
+		if err != nil {
+			t.Fatalf("iteration %d: With: %v", i, err)
+		}
+		union := newBase(t, append(append(append([]datalog.Fact{}, standing...), first...), second...)...)
+		for _, rel := range relations {
+			if extended.Len(rel) != union.Len(rel) {
+				t.Fatalf("iteration %d: %s holds %d tuples extended, %d over the union", i, rel, extended.Len(rel), union.Len(rel))
+			}
+		}
+		for _, rel := range []string{"reach", "lone", "top"} {
+			a, errA := tryRun(extended, text, rel, datalog.Options{})
+			b, errB := tryRun(union, text, rel, datalog.Options{})
+			if errA != nil || errB != nil || a.Hash() != b.Hash() {
+				t.Fatalf("iteration %d: %s answers differ: %v %v, %s vs %s", i, rel, errA, errB, a.Hash(), b.Hash())
+			}
+		}
 	}
 }

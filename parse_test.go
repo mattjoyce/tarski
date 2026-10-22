@@ -85,3 +85,24 @@ func TestParse_Terms(t *testing.T) {
 		t.Errorf("rule = %+v", p.Rules[0])
 	}
 }
+
+// An error on a character outside ASCII names the character, not one byte of it, and a
+// name is ASCII: a lead byte is not read as a Latin-1 letter.
+func TestParse_ReportsTheRuneNotTheByte(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ text, want string }{
+		{`a(X) :- b(X), é.`, `unexpected 'é'`},
+		{`é(1).`, `unexpected 'é'`},
+		{`a("é") :- b(X), X ~ 1.`, `unexpected '~'`},
+		{`a(Éx) :- b(X).`, `unexpected 'É'`},
+		{`日本(1).`, `unexpected '日'`},
+	} {
+		_, err := datalog.Parse(c.text)
+		if !errors.Is(err, datalog.ErrSyntax) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("Parse(%q) = %v, want ErrSyntax containing %s", c.text, err, c.want)
+		}
+	}
+	if _, err := datalog.Parse(`a("é, 日本") :- b(X).`); err != nil {
+		t.Errorf("a non-ASCII string constant = %v, want it parsed", err)
+	}
+}
