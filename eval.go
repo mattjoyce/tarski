@@ -11,6 +11,7 @@ import (
 type Result struct {
 	relations map[string]*relation
 	proofs    map[string]map[string]*derivation // nil unless Options.Proofs
+	plan      Plan                              // what WhyNot reads the rules and arities from
 }
 
 // Options bounds and shapes one evaluation.
@@ -61,7 +62,7 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if ev.over != nil {
 		return Result{}, ev.over
 	}
-	return Result{relations: ev.db, proofs: ev.proofs}, nil
+	return Result{relations: ev.db, proofs: ev.proofs, plan: plan}, nil
 }
 
 type evaluator struct {
@@ -216,7 +217,7 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation,
 	l := r.ordered[i]
 	switch {
 	case l.Compare != nil || isBuiltin(l.Atom.Name):
-		if ev.guardHolds(l, env) {
+		if guardHolds(l, env) {
 			return ev.join(r, i+1, env, delta, deltaPos, emit)
 		}
 		return nil
@@ -321,8 +322,9 @@ func holds(c Comparison, env map[string]Const) bool {
 	}
 }
 
-// guardHolds evaluates a comparison or a built-in literal under env.
-func (ev *evaluator) guardHolds(l Literal, env map[string]Const) bool {
+// guardHolds evaluates a comparison or a built-in literal under env. The why-not walk
+// uses it too.
+func guardHolds(l Literal, env map[string]Const) bool {
 	if l.Compare != nil {
 		return holds(*l.Compare, env)
 	}

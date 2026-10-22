@@ -71,19 +71,25 @@ func (b *builder) rule(src *Rule) *Rule {
 	if src.Body != nil {
 		c.Body = make([]Literal, len(src.Body))
 		for i, l := range src.Body {
-			c.Body[i] = Literal{Negated: l.Negated}
-			if l.Atom != nil {
-				a := copyAtom(*l.Atom)
-				c.Body[i].Atom = &a
-			}
-			if l.Compare != nil {
-				cmp := *l.Compare // Terms hold no pointers or slices
-				c.Body[i].Compare = &cmp
-			}
+			c.Body[i] = copyLiteral(l)
 		}
 	}
 	b.rules[src] = c
 	return c
+}
+
+// copyLiteral is a literal that shares nothing with l.
+func copyLiteral(l Literal) Literal {
+	out := Literal{Negated: l.Negated}
+	if l.Atom != nil {
+		a := copyAtom(*l.Atom)
+		out.Atom = &a
+	}
+	if l.Compare != nil {
+		cmp := *l.Compare // Terms hold no pointers or slices
+		out.Compare = &cmp
+	}
+	return out
 }
 
 func copyAtom(a Atom) Atom {
