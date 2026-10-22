@@ -163,7 +163,7 @@ func checkRule(r Rule, arities map[string]int, schema Schema) error {
 	}
 	for _, a := range atoms {
 		if err := checkAtom(*a, arities, schema); err != nil {
-			return fmt.Errorf("%w: line %d: %v", ErrInvalid, a.Line, err)
+			return fmt.Errorf("%w: line %d: %w", ErrInvalid, a.Line, err)
 		}
 	}
 	for _, a := range r.Head.Args {
@@ -227,7 +227,7 @@ func checkAtom(a Atom, arities map[string]int, schema Schema) error {
 	}
 	n, ok := arities[a.Name]
 	if !ok {
-		return fmt.Errorf("unknown relation %s/%d; the relations are %s", a.Name, len(a.Args), known(arities))
+		return fmt.Errorf("unknown relation %s/%d; %s", a.Name, len(a.Args), known(arities))
 	}
 	if n != len(a.Args) {
 		return fmt.Errorf("%s has %d arguments, but %s is %s/%d", a.Name, len(a.Args), a.Name, a.Name, n)
@@ -238,19 +238,29 @@ func checkAtom(a Atom, arities map[string]int, schema Schema) error {
 	return nil
 }
 
+// known says which relations a schema has, as the tail of an error sentence.
 func known(arities map[string]int) string {
+	if len(arities) == 0 {
+		return "the schema has no relations"
+	}
 	names := make([]string, 0, len(arities))
 	for name, n := range arities {
 		names = append(names, fmt.Sprintf("%s/%d", name, n))
 	}
 	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return "the relations are " + strings.Join(names, ", ")
 }
 
 // accepts refuses a base built under a different schema than the plan was compiled
 // over: a relation the plan reads that the base lacks, or holds at another arity,
-// would otherwise be read as empty or panic mid-join.
+// would otherwise be read as empty or panic mid-join; a relation the plan derives that
+// the base also holds would have its facts silently dropped.
 func (p Plan) accepts(b Base) error {
+	for _, name := range sortedKeys(b.relations) {
+		if p.idb[name] {
+			return fmt.Errorf("%w: the base holds %s, which the plan derives; a base relation cannot also be derived", ErrInvalid, name)
+		}
+	}
 	for name, n := range p.base {
 		r, ok := b.relations[name]
 		if !ok || r.arity != n {
@@ -258,4 +268,15 @@ func (p Plan) accepts(b Base) error {
 		}
 	}
 	return nil
+}
+
+// sortedKeys is the keys of m in order, so an error that names the first offender names
+// the same one every time.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

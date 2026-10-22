@@ -138,7 +138,7 @@ func TestEvaluate_MaxBytes(t *testing.T) {
 	text := `pairs(A, B) :- node(A), node(B). few(A) :- node(A), A = "n1".`
 	_, err := tryRun(base, text, "few", datalog.Options{MaxBytes: 200})
 	var big *datalog.TooLarge
-	if !errors.Is(err, datalog.ErrTooLarge) || !errors.As(err, &big) || big.Relation != "pairs" || big.MaxBytes != 200 {
+	if !errors.Is(err, datalog.ErrTooLarge) || !errors.As(err, &big) || big.Relation != "pairs" || big.MaxBytes != 200 || big.Bound != datalog.BoundBytes || !strings.HasPrefix(err.Error(), "datalog: ") {
 		t.Fatalf("Evaluate = %v, want ErrTooLarge at pairs over 200", err)
 	}
 	if ans, err := tryRun(base, text, "few", datalog.Options{}); err != nil || ans.Len() != 1 {
@@ -180,7 +180,7 @@ func TestEvaluate_MaxSteps(t *testing.T) {
 	if !errors.Is(err, datalog.ErrTooLarge) || !errors.As(err, &big) {
 		t.Fatalf("Evaluate = %v, want ErrTooLarge", err)
 	}
-	if big.MaxSteps != 1000 || big.Steps != 1001 || big.Relation != "dup" {
+	if big.MaxSteps != 1000 || big.Steps != 1001 || big.Relation != "dup" || big.Bound != "MaxSteps" || !strings.HasPrefix(err.Error(), "datalog: ") {
 		t.Errorf("TooLarge = %+v, want 1001 steps over 1000 at dup", *big)
 	}
 	for _, want := range []string{"1001 join steps", "Options.MaxSteps", "more selective"} {

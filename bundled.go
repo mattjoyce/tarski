@@ -19,8 +19,9 @@ type RuleSet struct {
 
 // NewRuleSet parses text and hashes it. It fails rather than returning a partial set:
 // the rules are one reading, and a binary that lost half of it would answer wrongly
-// with confidence. The name must be non-empty and free of spaces and semicolons, since
-// ID is read back by people and joined with others; the version is not negative. The
+// with confidence. The name must be non-empty and free of whitespace, slashes and
+// semicolons: ID is "name/version hash", and several are joined with "; ", so any of
+// them would make an ID ambiguous to read back. The version is not negative. The
 // version is part of what an answer means, and moves when the rules' meaning does,
 // with the hash catching any change the version did not.
 func NewRuleSet(name string, version int, text string) (RuleSet, error) {

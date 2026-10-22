@@ -64,7 +64,7 @@ func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 	for _, f := range facts {
 		n, ok := b.arities[f.Relation]
 		if !ok {
-			return nil, fmt.Errorf("%w: a fact of %s, which the schema does not have; the relations are %s",
+			return nil, fmt.Errorf("%w: a fact of %s, which the schema does not have; %s",
 				ErrInvalid, f.Relation, known(b.arities))
 		}
 		if len(f.Tuple) != n {
@@ -116,7 +116,7 @@ func (b Base) check(f Fact) error {
 		args[i] = Term{Const: c}
 	}
 	if err := check(Atom{Name: f.Relation, Args: args}); err != nil {
-		return fmt.Errorf("%w: a fact of %s: %v", ErrInvalid, f.Relation, err)
+		return fmt.Errorf("%w: a fact of %s: %w", ErrInvalid, f.Relation, err)
 	}
 	return nil
 }

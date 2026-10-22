@@ -1,6 +1,7 @@
 package datalog_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -184,5 +185,52 @@ func TestPlan_Arity(t *testing.T) {
 	}
 	if n, ok := plan.Arity("nothing"); ok || n != 0 {
 		t.Errorf("Arity(nothing) = %d, %v; want 0, false", n, ok)
+	}
+}
+
+// A base that holds a relation the plan derives would have those facts silently
+// dropped, so it is refused, naming the relation.
+func TestEvaluate_RefusesABaseHoldingADerivedRelation(t *testing.T) {
+	t.Parallel()
+	plan, err := datalog.Compile(datalog.Schema{Arities: map[string]int{"a": 1}}, parse(t, `d(X) :- a(X).`))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	base, err := datalog.NewBase(datalog.Schema{Arities: map[string]int{"a": 1, "d": 1}}, fact("a", "y"), fact("d", "x"))
+	if err != nil {
+		t.Fatalf("NewBase: %v", err)
+	}
+	_, err = datalog.Evaluate(context.Background(), plan, base, datalog.Options{})
+	if !errors.Is(err, datalog.ErrInvalid) || !strings.Contains(err.Error(), "the base holds d, which the plan derives") {
+		t.Errorf("Evaluate = %v, want ErrInvalid naming d", err)
+	}
+}
+
+var errCheck = errors.New("check sentinel")
+
+// A schema check's own error stays reachable: errors.Is finds the caller's sentinel
+// through Compile and through NewBase, beside ErrInvalid.
+func TestSchemaChecks_KeepTheirSentinel(t *testing.T) {
+	t.Parallel()
+	schema := datalog.Schema{
+		Arities: map[string]int{"node": 1},
+		Checks:  map[string]func(datalog.Atom) error{"node": func(datalog.Atom) error { return errCheck }},
+	}
+	_, err := datalog.Compile(schema, parse(t, `a(X) :- node(X).`))
+	if !errors.Is(err, errCheck) || !errors.Is(err, datalog.ErrInvalid) {
+		t.Errorf("Compile = %v, want the check's sentinel and ErrInvalid", err)
+	}
+	_, err = datalog.NewBase(schema, fact("node", "a"))
+	if !errors.Is(err, errCheck) || !errors.Is(err, datalog.ErrInvalid) {
+		t.Errorf("NewBase = %v, want the check's sentinel and ErrInvalid", err)
+	}
+}
+
+// An empty schema says so, instead of ending a sentence on "the relations are".
+func TestErrors_AnEmptySchemaIsNamed(t *testing.T) {
+	t.Parallel()
+	_, err := datalog.NewBase(datalog.Schema{}, fact("node", "a"))
+	if err == nil || !strings.HasSuffix(err.Error(), "the schema has no relations") {
+		t.Errorf("NewBase = %v, want it to end by saying the schema has no relations", err)
 	}
 }

@@ -2,6 +2,7 @@ package datalog_test
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -58,5 +59,39 @@ func TestTuple_NulDoesNotCollapseTuples(t *testing.T) {
 	ans, err := tryRun(b, `e(X, Y) :- edge(X, Y).`, "e", datalog.Options{})
 	if err != nil || ans.Len() != 3 {
 		t.Errorf("derived %d tuples, %v; want 3", ans.Len(), err)
+	}
+}
+
+// Int and Float make the constants Number would make from the same text, so a Go
+// value and a parsed literal are one constant.
+func TestIntAndFloat_AgreeWithNumber(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		made datalog.Const
+		text string
+	}{
+		{datalog.Int(14), "14"}, {datalog.Int(-3), "-3"}, {datalog.Int(0), "0"},
+		{datalog.Int(1 << 62), "4611686018427387904"},
+	} {
+		want, err := datalog.Number(c.text)
+		if err != nil || c.made != want || c.made.Text() != want.Text() {
+			t.Errorf("Int made %q, Number(%q) = %q, %v", c.made.Text(), c.text, want.Text(), err)
+		}
+	}
+	for f, text := range map[float64]string{1: "1", 1.5: "1.5", -2.25: "-2.25", 1e21: "1e21", 146.0: "146"} {
+		got, err := datalog.Float(f)
+		want, _ := datalog.Number(text)
+		if err != nil || got != want || got.Kind() != datalog.KindNumber {
+			t.Errorf("Float(%v) = %q, %v; want %q", f, got.Text(), err, want.Text())
+		}
+	}
+	negZero := math.Copysign(0, -1)
+	if z, err := datalog.Float(negZero); err != nil || z.Text() != "0" || z != datalog.Int(0) {
+		t.Errorf("Float(-0.0) = %q, %v; want 0, the same constant as Int(0)", z.Text(), err)
+	}
+	for _, f := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if _, err := datalog.Float(f); !errors.Is(err, datalog.ErrInvalid) {
+			t.Errorf("Float(%v) = %v, want ErrInvalid", f, err)
+		}
 	}
 }
