@@ -42,15 +42,15 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if err := plan.accepts(base); err != nil {
 		return Result{}, err
 	}
-	ev := &evaluator{ctx: ctx, db: map[string]*relation{}, opts: opts}
+	ev := &evaluator{ctx: ctx, db: map[string]source{}, opts: opts}
 	if opts.Proofs {
 		ev.proofs = map[string]map[string]*derivation{}
 	}
 	for name, rel := range base.relations {
-		ev.db[name] = rel
+		ev.db[name] = source{val: rel}
 	}
 	for name := range plan.idb {
-		ev.db[name] = newRelation()
+		ev.db[name] = source{bld: newRelBuilder()}
 	}
 	for _, stratum := range plan.strata {
 		if err := ev.stratum(stratum); err != nil {
@@ -62,12 +62,26 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if ev.over != nil {
 		return Result{}, ev.over
 	}
-	return Result{relations: ev.db, proofs: ev.proofs, plan: plan}, nil
+	return Result{relations: ev.sealed(plan), proofs: ev.proofs, plan: plan}, nil
+}
+
+// sealed is the evaluation's relations as values: the base's own, and each derived
+// relation sealed without indexes, which costs nothing. After this no builder is held.
+func (ev *evaluator) sealed(plan Plan) map[string]*relation {
+	out := make(map[string]*relation, len(ev.db))
+	for name, s := range ev.db {
+		if s.val != nil {
+			out[name] = s.val
+		} else {
+			out[name] = s.bld.seal(plan.arity[name], false)
+		}
+	}
+	return out
 }
 
 type evaluator struct {
 	ctx   context.Context
-	db    map[string]*relation
+	db    map[string]source
 	steps int
 
 	// Proofs only: the first derivation of each derived tuple, by relation then tuple
@@ -83,7 +97,7 @@ type evaluator struct {
 
 // stratum evaluates one stratum's rules to a fixpoint.
 func (ev *evaluator) stratum(rules []rule) error {
-	delta := map[string]*relation{}
+	delta := map[string]*relBuilder{}
 	for i := range rules {
 		if err := ev.apply(&rules[i], nil, -1, delta); err != nil {
 			return err
@@ -94,7 +108,7 @@ func (ev *evaluator) stratum(rules []rule) error {
 	}
 	for len(delta) > 0 {
 		ev.merge(delta)
-		next := map[string]*relation{}
+		next := map[string]*relBuilder{}
 		for i := range rules {
 			r := &rules[i] // a pointer into the plan, which a proof's Rule shares
 			for _, pos := range r.recursive {
@@ -116,7 +130,7 @@ func (ev *evaluator) stratum(rules []rule) error {
 // relation's tuples are already in derivation order; walking the relations sorted
 // keeps the evaluation a function of its inputs, with no map order in it, which a
 // proof of "the first derivation" relies on.
-func (ev *evaluator) merge(delta map[string]*relation) {
+func (ev *evaluator) merge(delta map[string]*relBuilder) {
 	names := make([]string, 0, len(delta))
 	for name := range delta {
 		names = append(names, name)
@@ -125,14 +139,14 @@ func (ev *evaluator) merge(delta map[string]*relation) {
 	for _, name := range names {
 		rel := delta[name]
 		for _, t := range rel.tuples {
-			ev.db[name].add(t)
+			ev.db[name].bld.add(t)
 		}
 	}
 }
 
 // apply derives r's head once over the database, with the positive atom at deltaPos
 // (if any) read from delta instead, and collects tuples not yet derived into out.
-func (ev *evaluator) apply(r *rule, delta *relation, deltaPos int, out map[string]*relation) error {
+func (ev *evaluator) apply(r *rule, delta *relBuilder, deltaPos int, out map[string]*relBuilder) error {
 	env := map[string]Const{}
 	if ev.proofs != nil {
 		ev.stack = make([]bodyTuple, 0, len(r.ordered))
@@ -147,7 +161,7 @@ func (ev *evaluator) apply(r *rule, delta *relation, deltaPos int, out map[strin
 		}
 		rel, ok := out[r.Head.Name]
 		if !ok {
-			rel = newRelation()
+			rel = newRelBuilder()
 			out[r.Head.Name] = rel
 		}
 		if rel.add(t) {
@@ -209,7 +223,7 @@ func (ev *evaluator) count(relation string, t Tuple) {
 
 // join extends env through the body literals from i on, calling emit for every
 // complete binding.
-func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation, deltaPos int, emit func()) error {
+func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relBuilder, deltaPos int, emit func()) error {
 	if i == len(r.ordered) {
 		emit()
 		return nil
@@ -233,7 +247,7 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation,
 	}
 	rel := ev.db[l.Atom.Name]
 	if i == deltaPos {
-		rel = delta
+		rel = source{bld: delta}
 	}
 	for _, idx := range matching(rel, l.Atom.Args, env) {
 		if ev.over != nil {
@@ -242,12 +256,12 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation,
 		if err := ev.step(r.Head.Name); err != nil {
 			return err
 		}
-		bound, ok := bind(rel.tuples[idx], l.Atom.Args, env)
+		bound, ok := bind(rel.tuples()[idx], l.Atom.Args, env)
 		if !ok {
 			continue
 		}
 		if ev.proofs != nil {
-			ev.stack = append(ev.stack, bodyTuple{l.Atom.Name, rel.tuples[idx]})
+			ev.stack = append(ev.stack, bodyTuple{l.Atom.Name, rel.tuples()[idx]})
 		}
 		if err := ev.join(r, i+1, env, delta, deltaPos, emit); err != nil {
 			return err
@@ -286,12 +300,12 @@ const stepsPerDeadlineCheck = 1024
 // exists reports whether some tuple of rel matches args under env. Each candidate it
 // tries is a join step like any other, charged against MaxSteps and the deadline: a
 // negation can scan as much as a join, and an error here is the bound's, not a miss.
-func (ev *evaluator) exists(head string, rel *relation, args []Term, env map[string]Const) (bool, error) {
+func (ev *evaluator) exists(head string, rel source, args []Term, env map[string]Const) (bool, error) {
 	for _, idx := range matching(rel, args, env) {
 		if err := ev.step(head); err != nil {
 			return false, err
 		}
-		if bound, ok := bind(rel.tuples[idx], args, env); ok {
+		if bound, ok := bind(rel.tuples()[idx], args, env); ok {
 			for _, v := range bound {
 				delete(env, v)
 			}

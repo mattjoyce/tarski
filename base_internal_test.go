@@ -49,14 +49,15 @@ func TestBase_WithSharesUntouchedRelations(t *testing.T) {
 	}
 }
 
-// A frozen relation has an index for every position from the start, and reading it
-// through candidates changes nothing.
-func TestRelation_FrozenIndexesAreComplete(t *testing.T) {
+// A sealed base relation has an index for every position from the start, and reading it
+// through candidates or an evaluation changes nothing. (The value has no add: that is
+// a fact about the types, not something a test can observe.)
+func TestRelation_SealedBaseHasEveryIndex(t *testing.T) {
 	t.Parallel()
 	b := internalBase(t, Fact{"edge", str("a", "b")}, Fact{"edge", str("a", "c")})
 	r := b.relations["edge"]
-	if !r.frozen || len(r.idx) != 2 {
-		t.Fatalf("frozen = %v with %d indexes, want true with 2", r.frozen, len(r.idx))
+	if len(r.idx) != 2 || r.arity != 2 {
+		t.Fatalf("%d indexes, arity %d; want 2 and 2", len(r.idx), r.arity)
 	}
 	if got := r.candidates(0, String("a")); len(got) != 2 {
 		t.Errorf("candidates(0, a) = %v, want two", got)
@@ -73,21 +74,67 @@ func TestRelation_FrozenIndexesAreComplete(t *testing.T) {
 	if _, err := Evaluate(context.Background(), plan, b, Options{}); err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	if len(r.idx) != 2 || len(before) != 2 || len(r.tuples) != 2 {
-		t.Error("Evaluate changed a frozen relation")
+	if len(r.idx) != 2 || len(before) != 2 || r.len() != 2 || b.relations["edge"] != r {
+		t.Error("Evaluate changed a sealed relation")
 	}
 }
 
-// Adding to a frozen relation is a bug in this package, and says so loudly.
-func TestRelation_AddToFrozenPanics(t *testing.T) {
+// A derived relation comes out of Evaluate sealed without indexes, and still answers
+// candidates correctly, by scanning. Sealing it builds nothing.
+func TestRelation_SealedDerivedHasNoIndexAndScans(t *testing.T) {
 	t.Parallel()
-	r := internalBase(t).relations["node"]
-	defer func() {
-		if recover() == nil {
-			t.Error("add to a frozen relation did not panic")
-		}
-	}()
-	r.add(str("a"))
+	plan, err := Compile(Schema{Arities: map[string]int{"edge": 2, "node": 1}}, mustParse(t, `p(X, Y) :- edge(X, Y).`))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	b := internalBase(t, Fact{"edge", str("a", "b")}, Fact{"edge", str("a", "c")}, Fact{"edge", str("b", "c")})
+	res, err := Evaluate(context.Background(), plan, b, Options{})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	p := res.relations["p"]
+	if p.idx != nil || p.arity != 2 || p.len() != 3 {
+		t.Fatalf("derived value: idx %v, arity %d, len %d; want no index, 2, 3", p.idx, p.arity, p.len())
+	}
+	if got := p.candidates(0, String("a")); len(got) != 2 || p.tuples[got[0]][1].Text() != "b" || p.tuples[got[1]][1].Text() != "c" {
+		t.Errorf("candidates(0, a) = %v, want the two a-tuples in order", got)
+	}
+	if got := p.candidates(1, String("c")); len(got) != 2 {
+		t.Errorf("candidates(1, c) = %v, want two", got)
+	}
+	if got := p.candidates(1, String("nothing")); len(got) != 0 || !p.has(str("b", "c")) || p.has(str("c", "b")) {
+		t.Errorf("candidates(1, nothing) = %v, has wrong", got)
+	}
+}
+
+// A builder indexes lazily and drops the index when it grows; sealing hands over its
+// tuples and set, with indexes only when asked.
+func TestRelBuilder_IndexesLazilyAndSeals(t *testing.T) {
+	t.Parallel()
+	b := newRelBuilder()
+	b.add(str("a", "b"))
+	if b.idx != nil {
+		t.Error("a builder indexed before any lookup")
+	}
+	if got := b.candidates(0, String("a")); len(got) != 1 {
+		t.Fatalf("candidates = %v, want one", got)
+	}
+	b.add(str("a", "c"))
+	if got := b.candidates(0, String("a")); len(got) != 2 {
+		t.Errorf("after growing, candidates = %v, want two: the index went stale", got)
+	}
+	if b.add(str("a", "c")) {
+		t.Error("a duplicate was added")
+	}
+	plain := newRelBuilder()
+	plain.add(str("x"))
+	if v := plain.seal(1, false); v.idx != nil || v.len() != 1 {
+		t.Errorf("seal(false) = idx %v, len %d; want none, 1", v.idx, v.len())
+	}
+	v := b.seal(2, true)
+	if len(v.idx) != 2 || v.len() != 2 || !v.has(str("a", "b")) {
+		t.Errorf("seal(true) = %d indexes, len %d", len(v.idx), v.len())
+	}
 }
 
 func mustParse(t *testing.T, text string) Program {

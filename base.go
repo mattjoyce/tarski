@@ -10,7 +10,7 @@ type Fact struct {
 
 // Base is the extensional database: the base relations of a schema, holding facts. It
 // is immutable once built and safe for concurrent Evaluate calls. Every relation is
-// frozen with all its indexes at construction, so evaluation only reads it.
+// sealed with all its indexes at construction, so evaluation only reads it.
 type Base struct {
 	arities   map[string]int
 	checks    map[string]func(Atom) error
@@ -39,7 +39,7 @@ func NewBase(schema Schema, facts ...Fact) (Base, error) {
 
 // With is the standing base plus more facts, as a new value; b is unchanged. Relations
 // the new facts do not touch are shared, not copied. A relation they do touch is
-// rebuilt from the standing tuples plus the new ones, and frozen again. Validation is
+// rebuilt from the standing tuples plus the new ones, and sealed again. Validation is
 // NewBase's.
 func (b Base) With(facts ...Fact) (Base, error) {
 	added, err := b.group(facts)
@@ -79,9 +79,9 @@ func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 	return added, nil
 }
 
-// rebuild is a frozen relation of prior's tuples (if any) then added, in that order.
+// rebuild is a sealed relation, indexed at every position, of prior's tuples (if any) then added, in that order.
 func rebuild(prior *relation, added []Tuple, arity int) *relation {
-	r := newRelation()
+	r := newRelBuilder()
 	if prior != nil {
 		for _, t := range prior.tuples {
 			r.add(t)
@@ -90,8 +90,7 @@ func rebuild(prior *relation, added []Tuple, arity int) *relation {
 	for _, t := range added {
 		r.add(t)
 	}
-	r.freeze(arity)
-	return r
+	return r.seal(arity, true)
 }
 
 // Len is how many tuples the base holds for relation, zero for a name it does not

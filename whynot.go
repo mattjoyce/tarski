@@ -234,7 +234,7 @@ func (w *walker) walk(i int, env map[string]Const) bool {
 func (w *walker) positive(i int, l Literal, env map[string]Const) bool {
 	rel := w.x.r.relations[l.Atom.Name]
 	matched := false
-	for _, idx := range candidates(rel, l.Atom.Args, env) {
+	for _, idx := range matching(source{val: rel}, l.Atom.Args, env) {
 		if w.x.spend() {
 			return false
 		}
@@ -259,7 +259,7 @@ func (w *walker) positive(i int, l Literal, env map[string]Const) bool {
 
 // probe finds the first tuple of rel that matches args under env, for a negation.
 func (w *walker) probe(rel *relation, args []Term, env map[string]Const) (t Tuple, held, stop bool) {
-	for _, idx := range candidates(rel, args, env) {
+	for _, idx := range matching(source{val: rel}, args, env) {
 		if w.x.spend() {
 			return nil, false, true
 		}
@@ -281,20 +281,6 @@ func (w *walker) record(i int, env map[string]Const, l Literal, blocked Tuple) {
 	}
 	w.found = true
 	w.best = miss{idx: i, env: maps.Clone(env), lit: l, blocked: blocked}
-}
-
-// candidates are the tuples of rel worth trying. A frozen base relation has every
-// index built and is only read; a derived relation's index is built lazily by writing
-// to it, which a shared Result must not allow, so it is scanned whole.
-func candidates(rel *relation, args []Term, env map[string]Const) []int {
-	if rel.frozen {
-		return matching(rel, args, env)
-	}
-	all := make([]int, len(rel.tuples))
-	for i := range all {
-		all[i] = i
-	}
-	return all
 }
 
 // unifyHead binds the rule's head variables to the goal's constants. ok is false when
