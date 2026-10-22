@@ -47,10 +47,31 @@ func Number(lexeme string) (Const, error) {
 	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
 		return Const{}, fmt.Errorf("%w: %q is not a finite number", ErrSyntax, lexeme)
 	}
+	return number(n), nil
+}
+
+// Int makes a number constant from an integer, the same constant Number gives for its
+// decimal text. Like every number here it is a float64 underneath, so an integer
+// beyond 2^53 is held as the nearest one that fits.
+func Int(n int64) Const { return number(float64(n)) }
+
+// Float makes a number constant from a float64, the same constant Number gives for the
+// value's text: Float(1) equals Number("1"), and -0 is 0. NaN and the infinities are
+// ErrInvalid, for the reasons Number refuses them.
+func Float(f float64) (Const, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return Const{}, fmt.Errorf("%w: %v is not a finite number", ErrInvalid, f)
+	}
+	return number(f), nil
+}
+
+// number is the one place a number constant is made from a finite float64, so every
+// constructor agrees on its lexeme and on zero having one sign.
+func number(n float64) Const {
 	if n == 0 {
 		n = 0 // not -0
 	}
-	return Const{kind: KindNumber, s: strconv.FormatFloat(n, 'g', -1, 64), n: n}, nil
+	return Const{kind: KindNumber, s: strconv.FormatFloat(n, 'g', -1, 64), n: n}
 }
 
 // Kind reports the constant's kind.
@@ -99,7 +120,28 @@ func (c *Const) UnmarshalJSON(b []byte) error {
 // self-delimiting, so a tuple's key is the concatenation of its constants' and a NUL
 // (or any byte) inside a string cannot move a boundary.
 func (c Const) key() string {
-	return string(rune('0'+c.kind)) + strconv.Itoa(len(c.s)) + ":" + c.s
+	var b strings.Builder
+	b.Grow(keyOverhead + len(c.s))
+	c.writeKey(&b)
+	return b.String()
+}
+
+// keyOverhead is the room a constant's key needs beyond its text: the kind byte, a
+// length of up to three digits, and the colon. It is only a size hint for Grow.
+const keyOverhead = 5
+
+// same reports whether two constants are one constant, as their keys would say, without
+// building either key.
+func (c Const) same(o Const) bool { return c.kind == o.kind && c.s == o.s }
+
+// writeKey writes the constant's key to b, the one place the format is made, so a
+// tuple's key is built in a single buffer instead of one string per constant.
+func (c Const) writeKey(b *strings.Builder) {
+	var digits [20]byte
+	b.WriteByte(byte('0' + c.kind))
+	b.Write(strconv.AppendInt(digits[:0], int64(len(c.s)), 10))
+	b.WriteByte(':')
+	b.WriteString(c.s)
 }
 
 // compare orders two constants of one kind: strings lexically (fact-times are
@@ -138,8 +180,13 @@ type Tuple []Const
 
 func (t Tuple) key() string {
 	var b strings.Builder
+	size := 0
 	for _, c := range t {
-		b.WriteString(c.key())
+		size += keyOverhead + len(c.s)
+	}
+	b.Grow(size)
+	for _, c := range t {
+		c.writeKey(&b)
 	}
 	return b.String()
 }

@@ -13,11 +13,18 @@ import (
 // again.
 var ErrTooLarge = errors.New("datalog: derivation too large")
 
+// The values of TooLarge.Bound.
+const (
+	BoundBytes = "MaxBytes"
+	BoundSteps = "MaxSteps"
+)
+
 // TooLarge is the refusal itself. Relation is the one being derived when a bound was
 // crossed. Tuples and Bytes count every derived relation's tuples and, approximately,
-// their JSON text; Steps counts join steps. The bound crossed is the one whose Max
-// field is set and exceeded.
+// their JSON text; Steps counts join steps. Bound names the option that was crossed,
+// "MaxBytes" or "MaxSteps", so a caller need not infer it from which fields are set.
 type TooLarge struct {
+	Bound    string
 	Relation string
 	Tuples   int
 	Bytes    int
@@ -27,11 +34,11 @@ type TooLarge struct {
 }
 
 func (e *TooLarge) Error() string {
-	if e.MaxSteps > 0 && e.Steps > e.MaxSteps {
-		return fmt.Sprintf("derivation too large: %d join steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
+	if e.Bound == BoundSteps {
+		return fmt.Sprintf("datalog: derivation too large: %d join steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
 			"make a rule more selective or the base smaller", e.Steps, e.MaxSteps, e.Relation)
 	}
-	return fmt.Sprintf("derivation too large: %d derived tuples encode to more than %d bytes (Options.MaxBytes), at %s; "+
+	return fmt.Sprintf("datalog: derivation too large: %d derived tuples encode to more than %d bytes (Options.MaxBytes), at %s; "+
 		"make a rule more selective or the base smaller", e.Tuples, e.MaxBytes, e.Relation)
 }
 
@@ -305,7 +312,7 @@ func (ev *evaluator) count(relation string, t Tuple) {
 	ev.tuples++
 	ev.bytes += n
 	if ev.opts.MaxBytes > 0 && ev.bytes > ev.opts.MaxBytes && ev.over == nil {
-		ev.over = &TooLarge{Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, MaxBytes: ev.opts.MaxBytes, Steps: ev.steps}
+		ev.over = &TooLarge{Bound: BoundBytes, Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, MaxBytes: ev.opts.MaxBytes, Steps: ev.steps}
 	}
 }
 
@@ -369,7 +376,7 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relation,
 func (ev *evaluator) step(relation string) error {
 	ev.steps++
 	if ev.opts.MaxSteps > 0 && ev.steps > ev.opts.MaxSteps {
-		ev.over = &TooLarge{Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, Steps: ev.steps, MaxSteps: ev.opts.MaxSteps}
+		ev.over = &TooLarge{Bound: BoundSteps, Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, Steps: ev.steps, MaxSteps: ev.opts.MaxSteps}
 		return ev.over
 	}
 	if ev.steps%stepsPerDeadlineCheck == 0 {
@@ -427,7 +434,7 @@ func bind(t Tuple, args []Term, env map[string]Const) (bound []string, ok bool) 
 			continue
 		}
 		if c, isBound := constant(a, env); isBound {
-			if c.key() != t[i].key() {
+			if !c.same(t[i]) {
 				for _, v := range bound {
 					delete(env, v)
 				}
