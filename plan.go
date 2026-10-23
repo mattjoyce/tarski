@@ -3,6 +3,7 @@ package datalog
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -45,7 +46,10 @@ type rule struct {
 // which is how a consumer's rules build on a bundled rule set. Programs are copied, and
 // a malformed one (see checkShape) is ErrInvalid. A relation declared and
 // defined nowhere is empty, not an error: that is how a rule set leaves a hook open.
+// Schema maps are copied before any check runs; check functions still own their
+// closure state and must provide stable results for stable inputs.
 func Compile(schema Schema, programs ...Program) (Plan, error) {
+	schema = Schema{Arities: maps.Clone(schema.Arities), Checks: maps.Clone(schema.Checks)}
 	// The plan owns what it compiles: it works from copies, so the caller editing a
 	// Program afterwards changes nothing the plan derives. Shape is checked on the copy
 	// before anything walks it.
