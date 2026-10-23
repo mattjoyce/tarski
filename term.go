@@ -51,7 +51,50 @@ func Number(lexeme string) (Const, error) {
 	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
 		return Const{}, fmt.Errorf("%w: %q is not a finite number", ErrSyntax, lexeme)
 	}
+	if !isJSONNumber(lexeme) {
+		return Const{}, fmt.Errorf("%w: %q is not a number as JSON spells one", ErrSyntax, lexeme)
+	}
 	return number(n), nil
+}
+
+// isJSONNumber reports whether s is a number as JSON spells one: an optional minus,
+// an integer part with no leading zero, an optional fraction, an optional exponent.
+// Go's ParseFloat reads more (a plus, a leading zero, hex, underscores, a bare point)
+// and the canonical lexeme is JSON, so what comes in is held to what goes out.
+func isJSONNumber(s string) bool {
+	i := 0
+	if i < len(s) && s[i] == '-' {
+		i++
+	}
+	digits := func() int {
+		start := i
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		return i - start
+	}
+	switch {
+	case i < len(s) && s[i] == '0':
+		i++
+	case digits() == 0:
+		return false
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		if digits() == 0 {
+			return false
+		}
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		if digits() == 0 {
+			return false
+		}
+	}
+	return i == len(s)
 }
 
 // Int makes a number constant from an integer, the same constant Number gives for its
@@ -101,6 +144,9 @@ func (c *Const) UnmarshalJSON(b []byte) error {
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return err
+	}
+	if dec.More() {
+		return fmt.Errorf("%w: a constant is one JSON value, but %s goes on after the first", ErrSyntax, b)
 	}
 	switch t := v.(type) {
 	case string:

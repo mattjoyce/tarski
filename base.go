@@ -74,13 +74,16 @@ func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 			return nil, fmt.Errorf("%w: a fact of %s has %d arguments, but %s is %s/%d",
 				ErrInvalid, f.Relation, len(f.Tuple), f.Relation, f.Relation, n)
 		}
+		// The copy comes first: the caller's tuple is theirs to change at any time,
+		// a check is the caller's code, and what is checked must be what is stored.
+		f.Tuple = append(Tuple(nil), f.Tuple...)
 		if err := checkUTF8(f); err != nil {
 			return nil, err
 		}
 		if err := b.check(f); err != nil {
 			return nil, err
 		}
-		added[f.Relation] = append(added[f.Relation], append(Tuple(nil), f.Tuple...))
+		added[f.Relation] = append(added[f.Relation], f.Tuple)
 	}
 	return added, nil
 }

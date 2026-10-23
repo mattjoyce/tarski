@@ -266,9 +266,12 @@ func TestAnswer_DoesNotAliasTheBase(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	hash, before := first.Hash(), rows(first)
-	first.Tuples[0][0] = datalog.String("tampered")
-	first.Tuples[1] = nil
+	first.Tuples()[0][0] = datalog.String("tampered")
+	first.Tuples()[1] = nil
 	first.Bytes()[0] = 'X'
+	if rows(first)[0] == "tampered" || first.Hash() != hash {
+		t.Fatal("Tuples and Bytes are copies; writing through them changes nothing")
+	}
 	again, err := tryRun(base, text, "e", datalog.Options{})
 	if err != nil || again.Hash() != hash || !same(rows(again), before) {
 		t.Errorf("after writing through an answer: %v, hash %s (was %s), rows %v (were %v)",

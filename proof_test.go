@@ -170,7 +170,7 @@ func TestProof_DeltaRounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tu := range ans.Tuples {
+	for _, tu := range ans.Tuples() {
 		p, ok := res.Proof("reaches", tu)
 		if !ok {
 			t.Fatalf("no proof of reaches%v", tu)
@@ -208,7 +208,7 @@ func TestProof_Deterministic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, tu := range ans.Tuples {
+		for _, tu := range ans.Tuples() {
 			pa, oka := a.Proof(rel, tu)
 			pb, okb := b.Proof(rel, tu)
 			if !oka || !okb || !reflect.DeepEqual(pa, pb) {

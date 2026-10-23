@@ -43,7 +43,7 @@ type builder struct {
 // build makes the proof of a tuple known to be in the result. A tuple with no
 // derivation record is a base fact, since every derived tuple has one.
 func (b *builder) build(name string, t Tuple) Proof {
-	k := name + "\x00" + t.key()
+	k := name + "\x00" + t.key() // unambiguous: a name holds no NUL (isName), a key is self-delimiting
 	if p, done := b.proofs[k]; done {
 		return p
 	}

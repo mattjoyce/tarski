@@ -5,7 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
-	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // RuleSet is a named, versioned program with a hash over its text. The hash goes into
@@ -26,11 +27,11 @@ type RuleSet struct {
 // version is part of what an answer means, and moves when the rules' meaning does,
 // with the hash catching any change the version did not.
 func NewRuleSet(name string, version int, text string) (RuleSet, error) {
-	if name == "" || strings.ContainsAny(name, " \t\r\n;/") {
-		return RuleSet{}, fmt.Errorf("%w: rule set name %q must be non-empty, with no spaces, slash or semicolon", ErrInvalid, name)
+	if err := checkIdentity(name, version); err != nil {
+		return RuleSet{}, err
 	}
-	if version < 0 {
-		return RuleSet{}, fmt.Errorf("%w: rule set %s: version %d is negative", ErrInvalid, name, version)
+	if text == "" {
+		return RuleSet{}, fmt.Errorf("%w: rule set %s/%d has no text; a rule set is its text, and Verify would refuse it", ErrInvalid, name, version)
 	}
 	p, err := Parse(text)
 	if err != nil {
@@ -53,6 +54,9 @@ func (s RuleSet) ID() string {
 // built or edited otherwise would put in a receipt a hash that matches neither the text
 // nor the rules that ran. A program with no text cannot be verified and is refused.
 func (s RuleSet) Verify() error {
+	if err := checkIdentity(s.Name, s.Version); err != nil {
+		return err
+	}
 	if s.Program.Text == "" {
 		return fmt.Errorf("%w: rule set %s/%d has no program text to verify its hash against", ErrInvalid, s.Name, s.Version)
 	}
@@ -66,6 +70,27 @@ func (s RuleSet) Verify() error {
 	parsed.Name = fmt.Sprintf("%s/%d", s.Name, s.Version)
 	if !reflect.DeepEqual(parsed, s.Program) {
 		return fmt.Errorf("%w: rule set %s/%d: the program does not match its text", ErrInvalid, s.Name, s.Version)
+	}
+	return nil
+}
+
+// checkIdentity holds a name and a version to what an ID can carry: a non-empty name
+// with no whitespace or control character (so a receipt reads as one line and one
+// token), no slash (which separates name from version) and no semicolon (which
+// separates one ID from the next), and a version that is not negative. The
+// constructor and Verify both ask, so a set edited after construction is held to the
+// same rule as one built by it.
+func checkIdentity(name string, version int) error {
+	if name == "" {
+		return fmt.Errorf("%w: rule set name must be non-empty", ErrInvalid)
+	}
+	for _, r := range name {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || r == '/' || r == ';' || r == utf8.RuneError {
+			return fmt.Errorf("%w: rule set name %q must have no whitespace, control character, slash or semicolon", ErrInvalid, name)
+		}
+	}
+	if version < 0 {
+		return fmt.Errorf("%w: rule set %s: version %d is negative", ErrInvalid, name, version)
 	}
 	return nil
 }

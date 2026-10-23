@@ -3,6 +3,7 @@ package datalog
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -106,10 +107,14 @@ func (p Plan) Arity(name string) (int, bool) {
 // silently empty.
 func (p Plan) Defines(name string) bool { return p.defined[name] }
 
-// checkSchema refuses a schema that could not hold a relation: a built-in's name, a
-// non-positive arity, or a check for a relation the schema does not have.
+// checkSchema refuses a schema that could not hold a relation: a name the lexer
+// would not read as one, a built-in's name, a non-positive arity, or a check for a
+// relation the schema does not have.
 func checkSchema(schema Schema) error {
 	for name, n := range schema.Arities {
+		if !isName(name) {
+			return fmt.Errorf("%w: %q is not a relation name", ErrInvalid, name)
+		}
 		if _, ok := builtins[name]; ok {
 			return fmt.Errorf("%w: %s is a built-in and cannot be a base relation", ErrInvalid, name)
 		}
@@ -261,7 +266,7 @@ func checkAtom(a Atom, arities map[string]int, schema Schema) error {
 		return fmt.Errorf("%s has %d arguments, but %s is %s/%d", a.Name, len(a.Args), a.Name, a.Name, n)
 	}
 	if check := schema.Checks[a.Name]; check != nil {
-		return check(a)
+		return check(Atom{Name: a.Name, Args: slices.Clone(a.Args), Line: a.Line})
 	}
 	return nil
 }

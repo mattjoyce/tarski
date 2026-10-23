@@ -94,7 +94,7 @@ func tryRun(base datalog.Base, text, relation string, opts datalog.Options) (dat
 // rows renders an answer as one string per tuple, for comparing against a table.
 func rows(a datalog.Answer) []string {
 	out := make([]string, 0, a.Len())
-	for _, tup := range a.Tuples {
+	for _, tup := range a.Tuples() {
 		parts := make([]string, len(tup))
 		for i, c := range tup {
 			parts[i] = c.Text()

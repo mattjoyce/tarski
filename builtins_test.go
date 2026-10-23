@@ -68,7 +68,7 @@ func TestBuiltins_Hooks(t *testing.T) {
 			t.Fatalf("Relation(%s): %v", rel, err)
 		}
 		if ans.Len() != n {
-			t.Errorf("%s holds %d tuples, want %d: %v", rel, ans.Len(), n, ans.Tuples)
+			t.Errorf("%s holds %d tuples, want %d: %v", rel, ans.Len(), n, ans.Tuples())
 		}
 	}
 }
@@ -108,7 +108,7 @@ func okRows(t *testing.T, body string, rows ...Tuple) map[string]bool {
 		t.Fatalf("Relation: %v", err)
 	}
 	got := map[string]bool{}
-	for _, tup := range ans.Tuples {
+	for _, tup := range ans.Tuples() {
 		got[tup[0].Text()+"|"+tup[1].Text()] = true
 	}
 	return got
@@ -241,7 +241,7 @@ func TestBuiltins_InRecursiveRule(t *testing.T) {
 		t.Fatalf("Relation: %v", err)
 	}
 	got := map[string]bool{}
-	for _, tup := range ans.Tuples {
+	for _, tup := range ans.Tuples() {
 		got[tup[0].Text()] = true
 	}
 	if len(got) != 3 || !got["a1"] || !got["a2"] || !got["a5"] {

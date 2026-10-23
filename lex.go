@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -138,8 +139,7 @@ func (lx *lexer) word() string {
 	return lx.src[start:lx.pos]
 }
 
-// str reads a double-quoted string with Go/JSON escapes; the quoted text is handed to
-// strconv.Unquote rather than a second escape table.
+// str reads a double-quoted string. Its escapes are JSON's or Go's: see unquote.
 func (lx *lexer) str(line int) (token, error) {
 	start := lx.pos
 	lx.pos++
@@ -151,7 +151,7 @@ func (lx *lexer) str(line int) (token, error) {
 		case '"':
 			lx.pos++
 			raw := lx.src[start:lx.pos]
-			s, err := strconv.Unquote(raw)
+			s, err := unquote(raw)
 			if err != nil {
 				return token{}, fmt.Errorf("%w: line %d: bad string %s", ErrSyntax, line, raw)
 			}
@@ -169,7 +169,131 @@ func (lx *lexer) str(line int) (token, error) {
 	return token{}, fmt.Errorf("%w: line %d: unterminated string", ErrSyntax, line)
 }
 
+// unquote reads a double-quoted string literal, quotes included, as either a JSON
+// string or a Go string: a literal a JSON encoder wrote (\/, a surrogate pair for a
+// character outside the BMP) and one a person wrote with Go's escapes (\x41, \u00e9,
+// \U0001F600) both read as the text they spell. JSON is tried first, Go second; a
+// literal neither accepts is an error. Both refuse a lone surrogate, and the caller
+// checks that the result is valid UTF-8.
+func unquote(raw string) (string, error) {
+	if s, ok := jsonUnquote(raw); ok {
+		return s, nil
+	}
+	return strconv.Unquote(raw)
+}
+
+// jsonUnquote reads raw as a JSON string literal: the escapes \" \\ \/ \b \f \n \r \t
+// and \uXXXX, a surrogate pair read as one character, and nothing else. ok is false
+// for anything that is not one.
+func jsonUnquote(raw string) (string, bool) {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return "", false
+	}
+	body := raw[1 : len(raw)-1]
+	var b strings.Builder
+	b.Grow(len(body))
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		switch {
+		case c == '"' || c < 0x20:
+			return "", false // an unescaped quote or control character is not JSON
+		case c != '\\':
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		if i >= len(body) {
+			return "", false
+		}
+		switch body[i] {
+		case '"', '\\', '/':
+			b.WriteByte(body[i])
+		case 'b':
+			b.WriteByte('\b')
+		case 'f':
+			b.WriteByte('\f')
+		case 'n':
+			b.WriteByte('\n')
+		case 'r':
+			b.WriteByte('\r')
+		case 't':
+			b.WriteByte('\t')
+		case 'u':
+			r, n, ok := jsonRune(body[i+1:])
+			if !ok {
+				return "", false
+			}
+			b.WriteRune(r)
+			i += n
+		default:
+			return "", false
+		}
+	}
+	return b.String(), true
+}
+
+// jsonRune reads the hex digits after \u, and the second escape of a surrogate pair,
+// returning the character and how many bytes it consumed. A lone surrogate is not ok.
+func jsonRune(s string) (r rune, n int, ok bool) {
+	hex4 := func(s string) (rune, bool) {
+		if len(s) < 4 {
+			return 0, false
+		}
+		v, err := strconv.ParseUint(s[:4], 16, 32)
+		return rune(v), err == nil
+	}
+	r, ok = hex4(s)
+	if !ok {
+		return 0, 0, false
+	}
+	switch {
+	case utf16.IsSurrogate(r) && r < 0xDC00: // a high surrogate: the low one must follow
+		if len(s) < 10 || s[4] != '\\' || s[5] != 'u' {
+			return 0, 0, false
+		}
+		low, ok := hex4(s[6:])
+		if !ok || low < 0xDC00 || low > 0xDFFF {
+			return 0, 0, false
+		}
+		return utf16.DecodeRune(r, low), 10, true
+	case utf16.IsSurrogate(r):
+		return 0, 0, false
+	}
+	return r, 4, true
+}
+
 // isDigit and isLetter are ASCII only: a name is a name in every locale, and a byte of
 // a multi-byte character must never be read as a Latin-1 letter.
 func isDigit(r rune) bool  { return r >= '0' && r <= '9' }
 func isLetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }
+
+// isName reports whether s is a relation name as the lexer reads one: a lower-case
+// letter, then letters, digits and underscores. The checks on a schema, a program
+// built by hand and an answer read back hold names to this, so a name is a name
+// wherever it came from, and the NUL that separates a name from a tuple in a key
+// can never be part of one.
+func isName(s string) bool {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	return isWord(s)
+}
+
+// isVarName reports whether s is a variable name as the lexer reads one: an
+// upper-case letter or an underscore, then letters, digits and underscores.
+func isVarName(s string) bool {
+	if s == "" || (s[0] < 'A' || s[0] > 'Z') && s[0] != '_' {
+		return false
+	}
+	return isWord(s)
+}
+
+func isWord(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
+		if !isLetter(c) && !isDigit(c) && c != '_' {
+			return false
+		}
+	}
+	return true
+}

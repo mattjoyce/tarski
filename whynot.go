@@ -98,11 +98,29 @@ type explainer struct {
 }
 
 // spend charges one candidate against the step limit and reports whether it is gone.
-func (x *explainer) spend() bool {
-	if x.steps++; x.steps > whyNotSteps {
+func (x *explainer) spend() bool { return x.spendN(1) }
+
+// spendN charges n against the step limit.
+func (x *explainer) spendN(n int) bool {
+	if x.steps += n; x.steps > whyNotSteps {
 		x.exhausted = true
 	}
 	return x.exhausted
+}
+
+// scanCost is what finding the candidates for args in rel costs before any is tried:
+// nothing when an index answers, every tuple when the relation has no index (a derived
+// relation) or no argument is bound, since then the relation is walked whole. It is
+// charged so the budget bounds the work and not only the matches.
+func scanCost(rel *relation, args []Term, env map[string]Const) int {
+	if rel.idx != nil {
+		for _, a := range args {
+			if _, ok := constant(a, env); ok {
+				return 0
+			}
+		}
+	}
+	return len(rel.tuples)
 }
 
 // absence explains why goal, over relation name, is not in the result. depth is how
@@ -254,6 +272,9 @@ func (w *walker) walk(i int, env map[string]Const) bool {
 // the later literal's failure.
 func (w *walker) positive(i int, l Literal, env map[string]Const) bool {
 	rel := w.x.r.relations[l.Atom.Name]
+	if w.x.spendN(scanCost(rel, l.Atom.Args, env)) {
+		return false
+	}
 	matched := false
 	for _, idx := range matching(source{val: rel}, l.Atom.Args, env) {
 		if w.x.spend() {
@@ -280,6 +301,9 @@ func (w *walker) positive(i int, l Literal, env map[string]Const) bool {
 
 // probe finds the first tuple of rel that matches args under env, for a negation.
 func (w *walker) probe(rel *relation, args []Term, env map[string]Const) (t Tuple, held, stop bool) {
+	if w.x.spendN(scanCost(rel, args, env)) {
+		return nil, false, true
+	}
 	for _, idx := range matching(source{val: rel}, args, env) {
 		if w.x.spend() {
 			return nil, false, true
