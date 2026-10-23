@@ -15,10 +15,11 @@ var ErrInvalid = errors.New("datalog: invalid program")
 
 // Plan is a validated, stratified program over a schema, ready to evaluate.
 type Plan struct {
-	strata [][]rule
-	idb    map[string]bool
-	base   map[string]int // the schema's relations and arities, which a Base must match
-	arity  map[string]int // every relation, base and derived
+	strata  [][]rule
+	idb     map[string]bool
+	defined map[string]bool // the derived relations some rule has as its head
+	base    map[string]int  // the schema's relations and arities, which a Base must match
+	arity   map[string]int  // every relation, base and derived
 }
 
 // Schema names the base relations a base may hold and, per relation, an optional
@@ -62,6 +63,12 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
+	defined := map[string]bool{}
+	for _, p := range programs {
+		for _, r := range p.Rules {
+			defined[r.Head.Name] = true
+		}
+	}
 	var rules []Rule
 	for _, p := range programs {
 		for _, r := range p.Rules {
@@ -82,7 +89,7 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	for name, n := range schema.Arities {
 		base[name] = n
 	}
-	return Plan{strata: strata, idb: idb, base: base, arity: arities}, nil
+	return Plan{strata: strata, idb: idb, defined: defined, base: base, arity: arities}, nil
 }
 
 // Arity is the arity of a relation the plan knows, base or derived. ok is false for a
@@ -92,6 +99,12 @@ func (p Plan) Arity(name string) (int, bool) {
 	n, ok := p.arity[name]
 	return n, ok
 }
+
+// Defines reports whether some rule has name as its head. A relation only declared
+// has an arity but no rule, and is empty: a consumer that reads a relation checks
+// both, so a rule set that declares what it was meant to define is refused, not
+// silently empty.
+func (p Plan) Defines(name string) bool { return p.defined[name] }
 
 // checkSchema refuses a schema that could not hold a relation: a built-in's name, a
 // non-positive arity, or a check for a relation the schema does not have.

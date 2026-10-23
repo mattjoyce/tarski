@@ -278,3 +278,40 @@ func TestAnswer_DoesNotAliasTheBase(t *testing.T) {
 		t.Error("Bytes() is not a copy: a write to it changed an answer")
 	}
 }
+
+// cancelAfterEntry cancels its context the first time the evaluator looks at it: the
+// evaluation starts live and is cancelled before any rule runs, deterministically.
+type cancelAfterEntry struct {
+	context.Context
+	cancel context.CancelFunc
+}
+
+func (c cancelAfterEntry) Err() error {
+	err := c.Context.Err()
+	c.cancel()
+	return err
+}
+
+// A plan of many ground facts visits no tuple, so the per-step look at the deadline
+// never happens; the per-rule look must stop it, and a cancelled evaluation must
+// never return a result.
+func TestEvaluate_CancelledBetweenRules(t *testing.T) {
+	p := parse(t, `answer("ok").`)
+	for len(p.Rules) < 1000 {
+		p.Rules = append(p.Rules, p.Rules[0])
+	}
+	plan, err := datalog.Compile(datalog.Schema{}, p)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	base, err := datalog.NewBase(datalog.Schema{})
+	if err != nil {
+		t.Fatalf("NewBase: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, err = datalog.Evaluate(cancelAfterEntry{ctx, cancel}, plan, base, datalog.Options{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled evaluation must stop with context.Canceled, got %v", err)
+	}
+}

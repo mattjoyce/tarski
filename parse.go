@@ -152,6 +152,9 @@ func (p *parser) statement() error {
 		if err != nil || arity < 1 {
 			return fmt.Errorf("%w: line %d: %s/%v is not a relation: arity must be a positive integer", ErrSyntax, line, name, arity)
 		}
+		if have, ok := p.prog.Declared[name]; ok && have != arity {
+			return fmt.Errorf("%w: line %d: %s/%d, but %s was declared %s/%d", ErrSyntax, line, name, arity, name, name, have)
+		}
 		p.prog.Declared[name] = arity
 		return p.expect(".")
 	}
@@ -192,7 +195,7 @@ func (p *parser) literal() (Literal, error) {
 		}
 		return Literal{Atom: &a, Negated: true}, nil
 	}
-	if p.at(tokName) {
+	if p.at(tokName) && !isBoolName(p.peek().text) {
 		a, err := p.atom()
 		if err != nil {
 			return Literal{}, err
@@ -221,6 +224,9 @@ func (p *parser) atom() (Atom, error) {
 		return Atom{}, p.fail("expected a relation name")
 	}
 	t := p.take()
+	if isBoolName(t.text) {
+		return Atom{}, fmt.Errorf("%w: line %d: %s is a constant, not a relation name", ErrSyntax, t.line, t.text)
+	}
 	a := Atom{Name: t.text, Line: t.line}
 	if err := p.expect("("); err != nil {
 		return Atom{}, err
@@ -258,13 +264,17 @@ func (p *parser) term() (Term, error) {
 		}
 		return Term{Const: c}, nil
 	case tokName:
-		if t.text == "true" || t.text == "false" {
+		if isBoolName(t.text) {
 			p.take()
 			return Term{Const: Bool(t.text == "true")}, nil
 		}
 	}
 	return Term{}, p.fail("expected a variable or a constant")
 }
+
+// isBoolName reports whether a name is one of the two boolean constants, which the
+// grammar reserves: they are terms, never relation names.
+func isBoolName(s string) bool { return s == "true" || s == "false" }
 
 // Clone is a deep copy of the program that shares nothing with p: rules, their atoms
 // and comparisons, the declarations. Each value is copied whole and then its reference

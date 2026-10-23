@@ -62,6 +62,11 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if ev.over != nil {
 		return Result{}, ev.over
 	}
+	// A cancellation that landed after the last look at the deadline is honoured
+	// here, so a cancelled evaluation never returns a result.
+	if err := ev.deadline(); err != nil {
+		return Result{}, err
+	}
 	return Result{relations: ev.sealed(plan), proofs: ev.proofs, plan: plan}, nil
 }
 
@@ -99,6 +104,9 @@ type evaluator struct {
 func (ev *evaluator) stratum(rules []rule) error {
 	delta := map[string]*relBuilder{}
 	for i := range rules {
+		if err := ev.deadline(); err != nil {
+			return err
+		}
 		if err := ev.apply(&rules[i], nil, -1, delta); err != nil {
 			return err
 		}
@@ -111,6 +119,9 @@ func (ev *evaluator) stratum(rules []rule) error {
 		next := map[string]*relBuilder{}
 		for i := range rules {
 			r := &rules[i] // a pointer into the plan, which a proof's Rule shares
+			if err := ev.deadline(); err != nil {
+				return err
+			}
 			for _, pos := range r.recursive {
 				d, ok := delta[r.ordered[pos].Atom.Name]
 				if !ok {
@@ -285,9 +296,19 @@ func (ev *evaluator) step(relation string) error {
 		return ev.over
 	}
 	if ev.steps%stepsPerDeadlineCheck == 0 {
-		if err := ev.ctx.Err(); err != nil {
-			return fmt.Errorf("datalog: evaluation stopped: %w", err)
-		}
+		return ev.deadline()
+	}
+	return nil
+}
+
+// deadline is the evaluation's error when its context is done. It is asked at entry,
+// before each rule is applied, every stepsPerDeadlineCheck-th join step inside a
+// rule, and before the result is returned: a rule that visits no tuple (a ground
+// fact, a guard over nothing) charges no step, so the per-rule look is what bounds
+// how long a cancelled evaluation of many such rules runs on.
+func (ev *evaluator) deadline() error {
+	if err := ev.ctx.Err(); err != nil {
+		return fmt.Errorf("datalog: evaluation stopped: %w", err)
 	}
 	return nil
 }

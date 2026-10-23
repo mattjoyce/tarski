@@ -68,9 +68,61 @@ func ruleRef(r *Rule) string {
 	return r.Set + ":" + strconv.Itoa(r.Line)
 }
 
-// oneLine is a rule's text on one line, whatever whitespace and comments it was
-// written with.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+// ruleLine is "ref  text" for a rule, or a marker for a RuleFailure built by hand with
+// no rule in it, which the engine never produces.
+func ruleLine(r *Rule) string {
+	if r == nil {
+		return "(no rule)"
+	}
+	return ruleRef(r) + "  " + oneLine(r.Text)
+}
+
+// oneLine is a rule's text on one line: a run of whitespace between tokens becomes one
+// space and a comment is dropped, while a quoted string is kept as written, since a
+// constant's whitespace is part of the constant.
+func oneLine(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	space := false
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '"':
+			j := i + 1
+			for j < len(s) && s[j] != '"' {
+				if s[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			if j < len(s) {
+				j++ // the closing quote; an unterminated string runs to the end
+			}
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString(s[i:j])
+			space, i = false, j-1
+		case '%':
+			for i+1 < len(s) && s[i+1] != '\n' {
+				i++
+			}
+		case ' ', '\t', '\n', '\r':
+			space = true
+		default:
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteByte(c)
+			space = false
+		}
+	}
+	return b.String()
+}
+
+// renderDepth bounds how deep a rendering follows Because. An engine-made Absence nests
+// at most as deep as WhyNot was asked to, far below this; the bound is so that a value
+// a caller built by hand with a cycle in it ends, as "(explanation truncated)".
+const renderDepth = 1024
 
 // String is the derivation as an indented tree, one tuple per line, with the rule
 // that produced it on the right as "set:line  text", or "fact" for a base fact. A
@@ -93,7 +145,7 @@ func (p Proof) write(b *strings.Builder, depth int, shown map[string]bool) {
 	case p.Rule == nil:
 		b.WriteString("  fact\n")
 	default:
-		fmt.Fprintf(b, "  %s  %s\n", ruleRef(p.Rule), oneLine(p.Rule.Text))
+		fmt.Fprintf(b, "  %s\n", ruleLine(p.Rule))
 	}
 	shown[key] = true
 	for _, sub := range p.Body {
@@ -112,6 +164,10 @@ func (a Absence) String() string {
 
 func (a Absence) write(b *strings.Builder, depth int) {
 	pad := strings.Repeat("  ", depth)
+	if depth > renderDepth {
+		fmt.Fprintf(b, "%s(explanation truncated)\n", pad)
+		return
+	}
 	goal := make([]Term, len(a.Goal))
 	for i, t := range a.Goal {
 		goal[i] = t
@@ -129,7 +185,7 @@ func (a Absence) write(b *strings.Builder, depth int) {
 		b.WriteString("\n")
 	}
 	for _, rf := range a.Rules {
-		fmt.Fprintf(b, "%s  %s  %s\n", pad, ruleRef(rf.Rule), oneLine(rf.Rule.Text))
+		fmt.Fprintf(b, "%s  %s\n", pad, ruleLine(rf.Rule))
 		fmt.Fprintf(b, "%s    stopped at %s%s\n", pad, rf.Failed.text(), boundText(rf.Bound))
 		if rf.Blocked != nil {
 			fmt.Fprintf(b, "%s    blocked by\n", pad)
@@ -179,19 +235,34 @@ type jsonProof struct {
 	Tuple    []Const     `json:"tuple"`
 	Rule     *jsonRule   `json:"rule"`
 	Body     []jsonProof `json:"body,omitempty"`
+	Shown    bool        `json:"shown,omitempty"`
 }
 
-func (p Proof) json() jsonProof {
-	out := jsonProof{Relation: p.Relation, Tuple: p.Tuple, Rule: ruleJSON(p.Rule)}
+// json writes the proof once per (relation, tuple): a sub-proof already in the
+// document is a reference, as in String. The engine's proof is a DAG whose shared
+// parts can make the unfolded tree exponential in the derivation; the document stays
+// linear in it.
+func (p Proof) json(shown map[string]bool) jsonProof {
+	out := jsonProof{Relation: p.Relation, Tuple: p.Tuple}
+	key := p.Relation + "\x00" + p.Tuple.key()
+	if shown[key] {
+		out.Shown = true
+		return out
+	}
+	shown[key] = true
+	out.Rule = ruleJSON(p.Rule)
 	for _, sub := range p.Body {
-		out.Body = append(out.Body, sub.json())
+		out.Body = append(out.Body, sub.json(shown))
 	}
 	return out
 }
 
 // MarshalJSON writes the proof as {relation, tuple, rule: {set, line, text} or null,
-// body: [...]}, the body omitted for a base fact. The tree is written out in full.
-func (p Proof) MarshalJSON() ([]byte, error) { return json.Marshal(p.json()) }
+// body: [...]}, the body omitted for a base fact. A tuple proved earlier in the same
+// document is not written out again: it is {relation, tuple, rule: null, shown: true},
+// and its proof is the first one in the document with that relation and tuple, so the
+// document is linear in the derivation however much of it is shared.
+func (p Proof) MarshalJSON() ([]byte, error) { return json.Marshal(p.json(map[string]bool{})) }
 
 type jsonFailure struct {
 	Rule    *jsonRule        `json:"rule"`
@@ -208,8 +279,12 @@ type jsonAbsence struct {
 	Rules     []jsonFailure `json:"rules"`
 }
 
-func (a Absence) json() jsonAbsence {
+func (a Absence) json(depth int) jsonAbsence {
 	out := jsonAbsence{Relation: a.Relation, Truncated: a.Truncated, Goal: make([]*Const, len(a.Goal)), Rules: []jsonFailure{}}
+	if depth > renderDepth {
+		out.Truncated = true
+		return out
+	}
 	for i, t := range a.Goal {
 		if !t.IsVar() {
 			c := t.Const
@@ -222,10 +297,10 @@ func (a Absence) json() jsonAbsence {
 			f.Bound = map[string]Const{}
 		}
 		for _, sub := range rf.Because {
-			f.Because = append(f.Because, sub.json())
+			f.Because = append(f.Because, sub.json(depth+1))
 		}
 		if rf.Blocked != nil {
-			p := rf.Blocked.json()
+			p := rf.Blocked.json(map[string]bool{})
 			f.Blocked = &p
 		}
 		out.Rules = append(out.Rules, f)
@@ -236,4 +311,5 @@ func (a Absence) json() jsonAbsence {
 // MarshalJSON writes the absence as {relation, goal, truncated, rules: [{rule, bound,
 // failed, because, blocked}]}. A goal position the caller left open is null, a failed
 // literal is its source text, and because and blocked appear only when there is one.
-func (a Absence) MarshalJSON() ([]byte, error) { return json.Marshal(a.json()) }
+// A blocked proof is written as Proof.MarshalJSON writes one.
+func (a Absence) MarshalJSON() ([]byte, error) { return json.Marshal(a.json(0)) }

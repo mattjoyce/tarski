@@ -186,6 +186,13 @@ func TestPlan_Arity(t *testing.T) {
 	if n, ok := plan.Arity("nothing"); ok || n != 0 {
 		t.Errorf("Arity(nothing) = %d, %v; want 0, false", n, ok)
 	}
+	// Defines is true only for a relation some rule derives: not a declaration, not a
+	// base relation.
+	for name, want := range map[string]bool{"up": true, "hook": false, "edge": false, "nothing": false} {
+		if got := plan.Defines(name); got != want {
+			t.Errorf("Defines(%s) = %v, want %v", name, got, want)
+		}
+	}
 }
 
 // A base that holds a relation the plan derives would have those facts silently

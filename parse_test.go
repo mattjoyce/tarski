@@ -106,3 +106,24 @@ func TestParse_ReportsTheRuneNotTheByte(t *testing.T) {
 		t.Errorf("a non-ASCII string constant = %v, want it parsed", err)
 	}
 }
+
+// A relation declared twice at different arities is a contradiction, not a
+// later-wins; and true/false are constants wherever they appear, so a comparison
+// may start with one and a relation may not be called one.
+func TestParse_DeclarationsAndBooleans(t *testing.T) {
+	for _, src := range []string{`p/1. p/2.`, `p/2. p/1.`, `true(1).`, `p(X) :- q(X), not false(X).`} {
+		if _, err := datalog.Parse(src); !errors.Is(err, datalog.ErrSyntax) {
+			t.Errorf("Parse(%q): want ErrSyntax, got %v", src, err)
+		}
+	}
+	if p, err := datalog.Parse(`p/2. p/2.`); err != nil || p.Declared["p"] != 2 {
+		t.Errorf("declaring p/2 twice is harmless: %v %v", p.Declared, err)
+	}
+	p, err := datalog.Parse(`p(X) :- q(X, B), true = B. r(X) :- q(X, B), false != B.`)
+	if err != nil {
+		t.Fatalf("a comparison may start with a boolean constant: %v", err)
+	}
+	if cmp := p.Rules[0].Body[1].Compare; cmp == nil || cmp.Left.Const.Kind() != datalog.KindBool {
+		t.Fatalf("want a comparison with a boolean on the left, got %+v", p.Rules[0].Body[1])
+	}
+}
