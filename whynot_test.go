@@ -272,3 +272,70 @@ func TestWhyNot_ConcurrentOverOneResult(t *testing.T) {
 		}
 	}
 }
+
+// A goal that repeats a variable, p(X, X), is explained with that equality held: a
+// head that cannot be one atom with it is no candidate, a head p(A, B) walks its body
+// with B held to A, and a head p(Y, "a") walks with Y bound to "a".
+func TestWhyNot_RepeatedGoalVariable(t *testing.T) {
+	schema := datalog.Schema{Arities: map[string]int{"edge": 2}}
+	eval := func(text string) datalog.Result {
+		t.Helper()
+		plan, err := datalog.Compile(schema, parse(t, text))
+		if err != nil {
+			t.Fatalf("Compile: %v", err)
+		}
+		base, err := datalog.NewBase(schema, fact("edge", "a", "b"), fact("edge", "b", "a"))
+		if err != nil {
+			t.Fatalf("NewBase: %v", err)
+		}
+		res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{Proofs: true})
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		return res
+	}
+	child := func(res datalog.Result) datalog.Absence {
+		t.Helper()
+		a, ok := res.WhyNot("q", tuple("missing"), 0)
+		if !ok {
+			t.Fatal("WhyNot: q(\"missing\") should be absent")
+		}
+		if len(a.Rules) != 1 || len(a.Rules[0].Because) != 1 {
+			t.Fatalf("want one rule with one because, got %s", a)
+		}
+		return a.Rules[0].Because[0]
+	}
+
+	t.Run("a constant head that cannot unify is no candidate", func(t *testing.T) {
+		sub := child(eval(`p("a", "b"). q("missing") :- p(X, X).`))
+		if len(sub.Rules) != 0 || sub.Truncated {
+			t.Fatalf("p(\"a\", \"b\") is not a candidate for p(X, X): %s", sub)
+		}
+	})
+	t.Run("two head variables the goal equates are walked as one", func(t *testing.T) {
+		sub := child(eval(`p(A, B) :- edge(A, B). q("missing") :- p(X, X).`))
+		if len(sub.Rules) != 1 {
+			t.Fatalf("want the one rule, got %s", sub)
+		}
+		rf := sub.Rules[0]
+		if rf.Failed.Atom == nil || rf.Failed.Atom.Name != "edge" {
+			t.Fatalf("the walk must stop at edge(A, B), no tuple has A = B: %s", sub)
+		}
+		if got := rf.Failed.Atom.Args; got[0].Var != "A" || got[1].Var != "B" {
+			t.Fatalf("Failed is reported as written, got %v", got)
+		}
+	})
+	t.Run("a head constant binds the variable the goal equates with it", func(t *testing.T) {
+		sub := child(eval(`p(Y, "a") :- edge(Y, "a"). q("missing") :- p(X, X).`))
+		if len(sub.Rules) != 1 {
+			t.Fatalf("want the one rule, got %s", sub)
+		}
+		rf := sub.Rules[0]
+		if c, ok := rf.Bound["Y"]; !ok || c.Text() != "a" {
+			t.Fatalf("Y must be bound to \"a\" by the goal, got %v", rf.Bound)
+		}
+		if rf.Failed.Atom == nil {
+			t.Fatalf("edge(\"a\", \"a\") is absent, so the walk must stop there: %s", sub)
+		}
+	})
+}

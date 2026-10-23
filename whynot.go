@@ -3,6 +3,7 @@ package datalog
 import (
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -140,17 +141,20 @@ func (x *explainer) rulesFor(name string) []*rule {
 // unify with the goal, so the rule is no candidate. cut reports that the explanation
 // was cut short for want of depth or steps.
 func (x *explainer) failure(ru *rule, goal []Term, depth int) (rf RuleFailure, cut, ok bool) {
-	env, ok := unifyHead(ru.Head.Args, goal)
+	env, alias, ok := unifyHead(ru.Head.Args, goal)
 	if !ok {
 		return RuleFailure{}, false, false
 	}
-	w := &walker{x: x, r: ru}
+	w := &walker{x: x, r: ru, alias: alias, body: ru.ordered}
+	if len(alias) > 0 {
+		w.body = renamed(ru.ordered, alias)
+	}
 	w.walk(0, env)
-	rf = RuleFailure{Rule: x.b.rule(&ru.Rule), Bound: maps.Clone(env)}
+	rf = RuleFailure{Rule: x.b.rule(&ru.Rule), Bound: w.bound(env)}
 	if !w.found {
 		return rf, false, true
 	}
-	rf.Bound, rf.Failed = w.best.env, copyLiteral(w.best.lit)
+	rf.Bound, rf.Failed = w.bound(w.best.env), copyLiteral(ru.ordered[w.best.idx])
 	switch {
 	case w.best.blocked != nil:
 		p := x.b.build(w.best.lit.Atom.Name, w.best.blocked)
@@ -189,11 +193,28 @@ type miss struct {
 
 // walker is a depth-first walk over one rule's ordered body.
 type walker struct {
-	x     *explainer
-	r     *rule
+	x *explainer
+	r *rule
+	// body is the rule's ordered body as walked: the rule's own, or a copy with the
+	// head variables the goal equates renamed to one, so the walk honours the equality.
+	body []Literal
+	// alias maps each renamed variable to the one it was renamed to.
+	alias map[string]string
 	best  miss
 	found bool // some literal found no match
 	full  bool // the body matched in full
+}
+
+// bound is env as the rule's own variables: a variable renamed for the walk is shown
+// bound to what its canonical name is bound to.
+func (w *walker) bound(env map[string]Const) map[string]Const {
+	out := maps.Clone(env)
+	for v, canon := range w.alias {
+		if c, ok := env[canon]; ok {
+			out[v] = c
+		}
+	}
+	return out
 }
 
 // walk extends env through the body from literal i on. It returns false to stop the
@@ -202,11 +223,11 @@ func (w *walker) walk(i int, env map[string]Const) bool {
 	if w.x.exhausted || w.full {
 		return false
 	}
-	if i == len(w.r.ordered) {
+	if i == len(w.body) {
 		w.full = true
 		return false
 	}
-	l := w.r.ordered[i]
+	l := w.body[i]
 	switch {
 	case l.Compare != nil || isBuiltin(l.Atom.Name):
 		if guardHolds(l, env) {
@@ -283,28 +304,126 @@ func (w *walker) record(i int, env map[string]Const, l Literal, blocked Tuple) {
 	w.best = miss{idx: i, env: maps.Clone(env), lit: l, blocked: blocked}
 }
 
-// unifyHead binds the rule's head variables to the goal's constants. ok is false when
-// the head and goal cannot be one atom: two different constants, or a variable the
-// goal would bind two ways.
-func unifyHead(head, goal []Term) (map[string]Const, bool) {
-	env := map[string]Const{}
+// unifyHead unifies the rule's head with the goal. env binds the head variables the
+// goal fixes; alias maps a head variable to another the goal equates it with (a goal
+// p(X, X) against a head p(A, B) makes B an alias of A), so the walk can hold them to
+// one value. ok is false when the head and goal cannot be one atom: two different
+// constants, a variable the goal would bind two ways, or two goal positions the goal
+// equates that the head holds to different constants.
+func unifyHead(head, goal []Term) (env map[string]Const, alias map[string]string, ok bool) {
+	u := unifier{parent: map[string]string{}, val: map[string]Const{}}
 	for i, h := range head {
 		g := goal[i]
+		hv, gv := h.IsVar() && h.Var != "_", g.IsVar() && g.Var != "_"
 		switch {
-		case !h.IsVar():
-			if !g.IsVar() && !g.Const.same(h.Const) {
-				return nil, false
+		case !h.IsVar() && !g.IsVar():
+			if !g.Const.same(h.Const) {
+				return nil, nil, false
 			}
-		case g.IsVar() || h.Var == "_":
-			// an open position binds nothing
-		default:
-			if c, bound := env[h.Var]; bound && !c.same(g.Const) {
-				return nil, false
+		case !h.IsVar() && gv:
+			if !u.set("g"+g.Var, h.Const) {
+				return nil, nil, false
 			}
-			env[h.Var] = g.Const
+		case hv && !g.IsVar():
+			if !u.set("h"+h.Var, g.Const) {
+				return nil, nil, false
+			}
+		case hv && gv:
+			if !u.union("h"+h.Var, "g"+g.Var) {
+				return nil, nil, false
+			}
+		}
+		// a head "_" binds nothing; a goal "_" is a fresh open position
+	}
+	env, alias = map[string]Const{}, map[string]string{}
+	canon := map[string]string{} // class root -> first head variable in it
+	for _, h := range head {
+		if !h.IsVar() || h.Var == "_" {
+			continue
+		}
+		root := u.find("h" + h.Var)
+		if c, bound := u.val[root]; bound {
+			env[h.Var] = c
+			continue
+		}
+		if first, seen := canon[root]; seen {
+			if first != h.Var {
+				alias[h.Var] = first
+			}
+			continue
+		}
+		canon[root] = h.Var
+	}
+	return env, alias, true
+}
+
+// unifier is a union-find over variable names, each class holding at most one constant.
+type unifier struct {
+	parent map[string]string
+	val    map[string]Const
+}
+
+func (u unifier) find(v string) string {
+	for {
+		p, ok := u.parent[v]
+		if !ok || p == v {
+			return v
+		}
+		v = p
+	}
+}
+
+// set binds v's class to c; false when it already holds a different constant.
+func (u unifier) set(v string, c Const) bool {
+	root := u.find(v)
+	if have, ok := u.val[root]; ok {
+		return have.same(c)
+	}
+	u.val[root] = c
+	return true
+}
+
+// union merges the classes of a and b; false when they hold different constants.
+func (u unifier) union(a, b string) bool {
+	ra, rb := u.find(a), u.find(b)
+	if ra == rb {
+		return true
+	}
+	ca, oka := u.val[ra]
+	cb, okb := u.val[rb]
+	if oka && okb && !ca.same(cb) {
+		return false
+	}
+	u.parent[rb] = ra
+	if okb && !oka {
+		u.val[ra] = cb
+	}
+	return true
+}
+
+// renamed is body with every variable alias maps replaced by its canonical name.
+func renamed(body []Literal, alias map[string]string) []Literal {
+	out := make([]Literal, len(body))
+	for i, l := range body {
+		out[i] = copyLiteral(l)
+		if out[i].Atom != nil {
+			renameTerms(out[i].Atom.Args, alias)
+		}
+		if out[i].Compare != nil {
+			pair := []Term{out[i].Compare.Left, out[i].Compare.Right}
+			renameTerms(pair, alias)
+			out[i].Compare.Left, out[i].Compare.Right = pair[0], pair[1]
 		}
 	}
-	return env, true
+	return out
+}
+
+func renameTerms(ts []Term, alias map[string]string) {
+	for i, t := range ts {
+		if canon, ok := alias[t.Var]; ok {
+			ts[i].Var = canon
+		}
+	}
 }
 
 // substitute is args with the variables env binds replaced by their constants. A
@@ -322,18 +441,29 @@ func substitute(args []Term, env map[string]Const) []Term {
 	return out
 }
 
-// goalKey identifies a goal by relation and constants. Open positions are all alike,
-// whatever the variable is called.
+// goalKey identifies a goal by relation, constants, and which open positions are the
+// same variable: p(X, X) and p(X, Y) are different goals, p(X, Y) and p(A, B) the same.
+// A variable is named by the position it first appears at; "_" is fresh each time.
 func goalKey(name string, goal []Term) string {
 	var b strings.Builder
 	b.WriteString(name)
-	for _, t := range goal {
+	first := map[string]int{}
+	for i, t := range goal {
 		b.WriteByte(0)
-		if t.IsVar() {
-			b.WriteByte('?')
-		} else {
+		if !t.IsVar() {
 			t.Const.writeKey(&b)
+			continue
 		}
+		at := i
+		if t.Var != "_" {
+			if j, seen := first[t.Var]; seen {
+				at = j
+			} else {
+				first[t.Var] = i
+			}
+		}
+		b.WriteByte('?')
+		b.WriteString(strconv.Itoa(at))
 	}
 	return b.String()
 }
