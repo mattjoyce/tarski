@@ -33,8 +33,11 @@ type Absence struct {
 	// Goal has a constant where the goal fixed a position and a variable where the
 	// caller left it open.
 	Goal []Term
-	// Rules has one entry per rule whose head unifies with the goal; empty for a base
-	// relation.
+	// Rules has one entry per rule whose head unifies with the goal. It is nil for a
+	// base relation, which has no rules ("no such fact"), and empty but not nil for a
+	// derived relation none of whose rules can derive the goal ("no rule's head
+	// matches"): the two render apart, since a missing fact and a rule set with no
+	// rule for the case are different things to fix.
 	Rules []RuleFailure
 	// Truncated is set when the walk hit the depth or the step limit. What is here is
 	// still true; there is more it did not look at.
@@ -126,7 +129,10 @@ func scanCost(rel *relation, args []Term, env map[string]Const) int {
 // absence explains why goal, over relation name, is not in the result. depth is how
 // many more levels of Because it may open.
 func (x *explainer) absence(name string, goal []Term, depth int) Absence {
-	a := Absence{Relation: name, Goal: slices.Clone(goal), Rules: []RuleFailure{}}
+	a := Absence{Relation: name, Goal: slices.Clone(goal)}
+	if x.r.plan.idb[name] {
+		a.Rules = []RuleFailure{}
+	}
 	for _, ru := range x.rulesFor(name) {
 		rf, cut, ok := x.failure(ru, goal, depth)
 		if !ok {

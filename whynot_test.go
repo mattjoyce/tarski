@@ -308,8 +308,11 @@ func TestWhyNot_RepeatedGoalVariable(t *testing.T) {
 
 	t.Run("a constant head that cannot unify is no candidate", func(t *testing.T) {
 		sub := child(eval(`p("a", "b"). q("missing") :- p(X, X).`))
-		if len(sub.Rules) != 0 || sub.Truncated {
+		if sub.Rules == nil || len(sub.Rules) != 0 || sub.Truncated {
 			t.Fatalf("p(\"a\", \"b\") is not a candidate for p(X, X): %s", sub)
+		}
+		if got := sub.String(); !strings.Contains(got, "no rule's head matches") {
+			t.Fatalf("a derived relation with no candidate rule is not \"no such fact\":\n%s", got)
 		}
 	})
 	t.Run("two head variables the goal equates are walked as one", func(t *testing.T) {

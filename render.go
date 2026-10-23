@@ -179,8 +179,10 @@ func (a Absence) write(b *strings.Builder, depth int) {
 	switch {
 	case a.Truncated:
 		b.WriteString(" (explanation truncated)\n")
-	case len(a.Rules) == 0:
+	case a.Rules == nil:
 		b.WriteString(": no such fact\n")
+	case len(a.Rules) == 0:
+		b.WriteString(": no rule's head matches\n")
 	default:
 		b.WriteString("\n")
 	}
