@@ -15,8 +15,9 @@ any tuple that was not. It reads no file and no network, holds no state between 
 knows no vocabulary: `role`, `entry` and `grants` are just strings to it.
 
 The language is small: rules, facts, stratified negation, comparisons, relation declarations, and
-three string built-ins (`prefix`, `suffix`, `contains`). There are no function symbols and no
-arithmetic in rule heads, so every program terminates.
+three string built-ins (`prefix`, `suffix`, `contains`), beside which a consumer may declare its
+own guards. There are no function symbols and no arithmetic in rule heads, so every program
+terminates.
 
 Status: pre-1.0. Cut on 2026-10-25 from [Shearline](https://github.com/mattjoyce/shearline),
 which had cut it from [Anam](https://github.com/mattjoyce/anam), with the history carried both
@@ -64,6 +65,20 @@ entry, and three consumers have to agree.
   make the engine panic, and the fuzz suites in CI hold that.
 - **Receipts as data.** `Proof`, `Absence` and `RuleFailure` are exported structs. They render
   as indented text and marshal to compact JSON.
+
+## Consumer builtins
+
+A consumer that needs a guard in its own vocabulary declares it in `Schema.Builtins` beside the
+engine's (`EngineBuiltins` lists those for a catalogue). It is a guard like `prefix`: every
+argument is bound by a positive body atom, it binds and derives nothing, and Compile copies the
+table, so changing the map afterwards changes no plan.
+
+The contract splits in two. **The engine guarantees** termination (a builtin creates no value),
+a bounded number of calls (each follows a join step charged to `MaxSteps`), and that a `Holds`
+which panics fails the evaluation with `ErrInvalid` rather than escaping. **The consumer
+guarantees** that `Holds` is a pure, total, deterministic function of its arguments, safe to
+call concurrently, and that one call is cheap. An impure builtin voids "same inputs, same
+outputs" and the answer hash, and that is the consumer's fault, not the engine's.
 
 ## Roadmap
 

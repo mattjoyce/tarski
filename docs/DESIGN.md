@@ -37,10 +37,21 @@ func Parse(text string) (Program, error)               // unchanged
 // NewBase/With (as an Atom of constants), so the schema's word holds everywhere a
 // tuple enters. Its error is wrapped, so errors.Is on the caller's sentinel works. A
 // Schema that carries checks is not a comparable value; keep every other field plain data.
+// Builtins declares the consumer's own guards beside the engine's; see § Built-ins.
 type Schema struct {
-    Arities map[string]int
-    Checks  map[string]func(Atom) error               // nil map or nil entry: no check
+    Arities  map[string]int
+    Checks   map[string]func(Atom) error              // nil map or nil entry: no check
+    Builtins map[string]Builtin                       // nil map: the engine's builtins only
 }
+
+type Builtin struct {
+    Args  []BuiltinArg                  // arity is len(Args), at least 1; names for catalogues and messages
+    Doc   string                        // the contract a catalogue prints
+    Check func(consts []*Const) error   // optional, at Compile: one entry per argument, nil for a variable
+    Holds func(args []Const) bool       // required: the guard over bound arguments
+}
+type BuiltinArg struct{ Name, Doc string }
+func EngineBuiltins() map[string]Builtin              // prefix, suffix, contains; a fresh copy
 
 // Fact is one tuple of a base relation.
 type Fact struct {
@@ -77,7 +88,8 @@ type Options struct {
 // shape only, names and arities: a base built under a schema with different Checks
 // passes, because its facts were checked by its own schema at NewBase. A caller that
 // wants one set of checks everywhere compiles and builds from one Schema value, as
-// Shearline's policy.Load does.
+// Shearline's policy.Load does. Builtins are the plan's alone: a base never consults
+// them, so a base built under a schema with other Builtins passes too.
 func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error)
 
 func (r Result) Relation(name string) (Answer, error)
@@ -194,10 +206,15 @@ func (p Plan) Defines(name string) bool
 
 ### Built-ins
 
-Three reserved relations over strings, each a guard like a comparison: both arguments must be
-bound by a positive body atom (else `ErrInvalid` at compile), they bind nothing, they derive
-nothing, and they never appear in a head, a declaration, or a schema (else `ErrInvalid`).
-Argument order is pattern first, subject second. A non-string argument makes the guard false.
+A builtin is a relation answered in Go, a guard like a comparison: every argument must be
+bound by a positive body atom (else `ErrInvalid` at compile; `_` is refused too), it binds
+nothing, derives nothing, and never appears in a head, a declaration, or among a schema's
+`Arities` (else `ErrInvalid`). So it creates no value and evaluation still terminates. A proof
+through one lists only the positive atoms; a why-not stopped by one reports it as `Failed`, with
+no `Because`.
+
+The engine has three, over strings. Argument order is pattern first, subject second. A
+non-string argument makes the guard false.
 
 | Atom | True when |
 |---|---|
@@ -205,10 +222,30 @@ Argument order is pattern first, subject second. A non-string argument makes the
 | `suffix(P, S)` | `strings.HasSuffix(S, P)` |
 | `contains(P, S)` | `strings.Contains(S, P)` |
 
-Implementation: `builtins.go` holds `var builtins = map[string]builtin` keyed by name, with
-`type builtin struct{ arity int; eval func(args []Const) bool }`. `plan.go` consults it in
-`relations`/`checkAtom`/`checkRule`; `stratify.go`'s `order`/`ready` treats a built-in literal as a
-guard; `eval.go`'s `join` evaluates it where it evaluates a `Comparison`.
+A consumer declares its own in `Schema.Builtins`, keyed by name, and they are treated exactly as
+the engine's at Compile, in stratification, in Evaluate and in WhyNot. Compile refuses
+(`ErrInvalid`) a declared name that is not a relation name, an engine builtin's name, or also a
+base relation in `Arities`; a declaration with no `Args` or a nil `Holds`; and, as for the engine's,
+a head or declaration of a builtin, a wrong arity, or an unbound argument. `Check`, when set,
+sees one `*Const` per argument (nil for a variable) and its error is wrapped in `ErrInvalid`
+with the line. NewBase holds the same Schema to the same declaration rules, since a Schema is one
+value.
+
+The contract a consumer signs: `Holds` is a pure, total, deterministic function of its
+arguments, safe to call concurrently. The engine guarantees termination (no value is created)
+and bounds the number of calls (each follows a join step charged to `MaxSteps`); purity and the
+cost of one call are the consumer's. An impure `Holds` voids "same inputs, same outputs" and the
+hash. A `Holds` that panics is recovered where it is called: Evaluate fails with `ErrInvalid`
+naming the builtin and its arguments, WhyNot returns ok false, and no panic reaches the caller.
+`Check` is not recovered, like `Schema.Checks`: it runs once at Compile, on the program, not on
+data.
+
+Implementation: `builtins.go` holds `engineBuiltins` and `type builtinTable map[string]Builtin`.
+Compile copies the engine's entries and the consumer's (each `Args` cloned) into one table on the
+`Plan`, so a caller changing its map afterwards changes nothing a compiled plan does. `plan.go`
+consults the table in `relations`/`checkAtom`/`checkRule`; `stratify.go`'s `order` treats a
+builtin literal as a guard; `eval.go`'s `join` and `whynot.go`'s `walk` evaluate it where they
+evaluate a `Comparison`.
 
 ### Evaluation invariants
 
