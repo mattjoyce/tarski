@@ -44,6 +44,8 @@ func (l Literal) text() string {
 	switch {
 	case l.Compare != nil:
 		return l.Compare.Left.text() + " " + l.Compare.Op + " " + l.Compare.Right.text()
+	case l.Aggregate != nil:
+		return l.Aggregate.text()
 	case l.Atom == nil:
 		return "(no failing literal found)"
 	case l.Negated:

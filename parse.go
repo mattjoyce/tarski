@@ -35,11 +35,15 @@ type Comparison struct {
 	Line        int
 }
 
-// Literal is one body element: a positive atom, a negated atom, or a comparison.
+// Literal is one body element: a positive atom, a negated atom, a comparison, or an
+// aggregate. Exactly one of Atom, Compare and Aggregate is set.
 type Literal struct {
 	Atom    *Atom
 	Negated bool
 	Compare *Comparison
+	// Aggregate is R = op [X] : { body }. It is nil for every literal that is not an
+	// aggregate, so a program without one parses to the AST it always did.
+	Aggregate *Aggregate
 }
 
 // Rule is head :- body. A fact is a rule with no body.
@@ -75,9 +79,15 @@ type Program struct {
 //	name/arity.                                  declares a relation another program defines
 //	head(X, "c", 1).                             a fact
 //	head(X, Y) :- rel(X, Z), not other(Z), Y > 3.  a rule
+//	n(M, N) :- month(M), N = count : { reading(M, _) }.  an aggregate
 //
 // A relation name is lower-case; a variable starts upper-case; _ is anonymous.
-// Constants are double-quoted strings, numbers, true and false.
+// Constants are double-quoted strings, numbers, true and false. An aggregate is
+// R = count : { ... }, or R = sum X, min X or max X then : { ... }, where the braces
+// hold a comma list of atoms, negations and comparisons and no other aggregate. The
+// operation words are not reserved: one is read as an operation only after "R =", or
+// where an aggregate is misplaced, so count, sum, min and max stay valid relation
+// names. avg and mean are refused there: derive count and sum and divide in the caller.
 func Parse(text string) (Program, error) {
 	lx := &lexer{src: text, line: 1}
 	toks, err := lx.all()
@@ -97,10 +107,11 @@ func Parse(text string) (Program, error) {
 var comparisonOps = map[string]bool{"=": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true}
 
 type parser struct {
-	toks []token
-	src  string
-	i    int
-	prog Program
+	toks        []token
+	src         string
+	i           int
+	prog        Program
+	inAggregate bool // reading an aggregate's braces, where another aggregate is refused
 }
 
 func (p *parser) peek() token { return p.toks[p.i] }
@@ -187,8 +198,14 @@ func (p *parser) statement() error {
 }
 
 func (p *parser) literal() (Literal, error) {
+	if p.atAggregate() {
+		return Literal{}, p.fail("an aggregate's result comes first: write N = %s ... : { ... }", p.peek().text)
+	}
 	if p.at(tokName, "not") {
 		p.take()
+		if p.atAggregate() {
+			return Literal{}, p.fail("an aggregate cannot be negated; compare its result instead")
+		}
 		a, err := p.atom()
 		if err != nil {
 			return Literal{}, err
@@ -212,6 +229,14 @@ func (p *parser) literal() (Literal, error) {
 		return Literal{}, p.fail("expected a comparison operator")
 	}
 	p.take()
+	// A name after an operator was never a term, so reading an operation word here as an
+	// aggregate changes no program that parsed before.
+	if p.at(tokName) && isAggregateWord(p.peek().text) {
+		if op.text != "=" {
+			return Literal{}, p.fail("an aggregate binds its result with =, not %s", op.text)
+		}
+		return p.aggregate(left, line)
+	}
 	right, err := p.term()
 	if err != nil {
 		return Literal{}, err
@@ -268,6 +293,9 @@ func (p *parser) term() (Term, error) {
 			p.take()
 			return Term{Const: Bool(t.text == "true")}, nil
 		}
+		if p.atAggregate() {
+			return Term{}, p.fail("an aggregate cannot be an argument; bind its result in the body with N = %s ... : { ... }", t.text)
+		}
 	}
 	return Term{}, p.fail("expected a variable or a constant")
 }
@@ -276,8 +304,8 @@ func (p *parser) term() (Term, error) {
 // grammar reserves: they are terms, never relation names.
 func isBoolName(s string) bool { return s == "true" || s == "false" }
 
-// Clone is a deep copy of the program that shares nothing with p: rules, their atoms
-// and comparisons, the declarations. Each value is copied whole and then its reference
+// Clone is a deep copy of the program that shares nothing with p: rules, their atoms,
+// comparisons and aggregates (an aggregate's body included), the declarations. Each value is copied whole and then its reference
 // parts replaced, so a field added to Program or Rule later is carried by the copy
 // without anyone remembering to add it here.
 func (p Program) Clone() Program {

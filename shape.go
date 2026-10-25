@@ -13,17 +13,15 @@ import (
 // checkShape refuses a program set whose values are not a program: a declaration or
 // an atom whose relation name is not one the lexer would read, or with an arity
 // below one; a variable that is not a variable name; a string constant that is not
-// valid UTF-8 (the engine's string domain, see String); a literal that is neither an
-// atom nor a comparison or is both; a negated comparison; or a comparison with an
-// operator the language does not have. A zero Term is the empty string constant and
+// valid UTF-8 (the engine's string domain, see String); a literal that is not exactly
+// one of an atom, a comparison and an aggregate; a negated comparison or aggregate; a
+// comparison with an operator the language does not have; or an aggregate that is not
+// one (see checkAggregateShape). A zero Term is the empty string constant and
 // is fine. Every value the parser makes passes; the check is for a program built or
 // edited by hand.
 func checkShape(programs []Program) error {
 	for i, p := range programs {
-		who := p.Name
-		if who == "" {
-			who = fmt.Sprintf("program %d", i+1)
-		}
+		who := programName(p, i)
 		for _, name := range sortedKeys(p.Declared) {
 			if name == "" {
 				return fmt.Errorf("%w: %s declares a relation with no name", ErrInvalid, who)
@@ -44,6 +42,15 @@ func checkShape(programs []Program) error {
 	return nil
 }
 
+// programName is how an error names the i-th program passed to Compile: its rule set,
+// or its position when it has none.
+func programName(p Program, i int) string {
+	if p.Name != "" {
+		return p.Name
+	}
+	return fmt.Sprintf("program %d", i+1)
+}
+
 func checkRuleShape(r Rule) error {
 	if err := checkAtomShape(r.Head); err != nil {
 		return fmt.Errorf("the head: %w", err)
@@ -58,10 +65,18 @@ func checkRuleShape(r Rule) error {
 
 func checkLiteralShape(l Literal) error {
 	switch {
-	case l.Atom == nil && l.Compare == nil:
-		return fmt.Errorf("it is neither an atom nor a comparison")
+	case l.Atom == nil && l.Compare == nil && l.Aggregate == nil:
+		return fmt.Errorf("it is neither an atom nor a comparison nor an aggregate")
 	case l.Atom != nil && l.Compare != nil:
 		return fmt.Errorf("it is both an atom and a comparison")
+	case l.Atom != nil && l.Aggregate != nil:
+		return fmt.Errorf("it is both an atom and an aggregate")
+	case l.Compare != nil && l.Aggregate != nil:
+		return fmt.Errorf("it is both a comparison and an aggregate")
+	case l.Aggregate != nil && l.Negated:
+		return fmt.Errorf("an aggregate cannot be negated; compare its result instead")
+	case l.Aggregate != nil:
+		return checkAggregateShape(*l.Aggregate)
 	case l.Compare != nil && l.Negated:
 		return fmt.Errorf("a comparison cannot be negated; use the opposite operator")
 	case l.Atom != nil:

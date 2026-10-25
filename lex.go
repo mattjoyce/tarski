@@ -21,8 +21,15 @@ const (
 	tokVar
 	tokString
 	tokNumber
-	tokPunct // ( ) , . :- / and the comparison operators
+	tokPunct // ( ) , . :- / : { } and the comparison operators
 )
+
+// punctuation is every token that is not a word, a string or a number, longest match
+// first: ":-" is listed ahead of ":", so a rule's neck is never read as an aggregate's
+// colon and a minus sign. ":", "{" and "}" belong to aggregates (N = count : { ... });
+// no v0.1 program held any of the three, since each was "unexpected", so adding them
+// changes no program that parsed.
+var punctuation = []string{":-", "!=", "<=", ">=", "=", "<", ">", "(", ")", ",", ".", "/", ":", "{", "}"}
 
 type token struct {
 	kind tokKind
@@ -74,7 +81,7 @@ func (lx *lexer) next() (token, error) {
 		lx.number()
 		return token{kind: tokNumber, text: lx.src[start:lx.pos], line: line}, nil
 	}
-	for _, p := range []string{":-", "!=", "<=", ">=", "=", "<", ">", "(", ")", ",", ".", "/"} {
+	for _, p := range punctuation {
 		if strings.HasPrefix(lx.src[lx.pos:], p) {
 			lx.pos += len(p)
 			return token{kind: tokPunct, text: p, line: line}, nil
