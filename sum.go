@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
+	"sort"
 )
 
 // maxSumDigits bounds the aligned width of an exact sum: the number of decimal places
@@ -66,28 +66,46 @@ func sumNumbers(ns []number) (number, error) {
 	if width := high - low; width > maxSumDigits {
 		return number{}, &TooLarge{Bound: BoundNumber, sum: sumOverflow{need: width, limit: maxSumDigits}}
 	}
-	var total, term big.Int
-	for _, n := range ns {
-		if n.digits != "0" {
-			total.Add(&total, n.aligned(low, &term))
-		}
-	}
-	r := canonical(total.Sign() < 0, total.Abs(&total).String(), low)
+	total := fold(ns)
+	r := canonical(total.Sign() < 0, total.Abs(total).String(), low)
 	if e := r.sciExponent(); e > maxExponent || e < -maxExponent {
 		return number{}, &TooLarge{Bound: BoundNumber, sum: sumOverflow{exponent: true, need: e, limit: maxExponent}}
 	}
 	return r, nil
 }
 
-// aligned sets v to the number's value as an integer count of 10^low, for a low no
-// greater than its exponent, and returns v. The digits are decimal by construction,
-// so the parse cannot fail.
-func (n number) aligned(low int, v *big.Int) *big.Int {
-	v.SetString(n.digits+strings.Repeat("0", n.exp-low), 10)
-	if n.neg {
-		v.Neg(v)
+// fold is the sum of the non-zero numbers in ns as an integer count of 10^low, where
+// low is the least exponent among them (at least two, as sumNumbers ensures). It works
+// highest exponent first, scaling the running total by a power of ten only when the
+// exponent drops, so each addend's digits are parsed once and unpadded, and the gaps it
+// scales by add up to the width, never the width once per addend. Parsing a padded
+// decimal string per addend did: Go's decimal parse is quadratic in the string's length,
+// and a group of wide addends paid it for every witness (commit security review). The
+// digits are decimal by construction, so no parse can fail. Addition is commutative,
+// so the order of equal exponents does not move the value.
+func fold(ns []number) *big.Int {
+	nz := make([]number, 0, len(ns))
+	for _, n := range ns {
+		if n.digits != "0" {
+			nz = append(nz, n)
+		}
 	}
-	return v
+	sort.Slice(nz, func(i, j int) bool { return nz[i].exp > nz[j].exp })
+	var total, term, scale big.Int
+	ten := big.NewInt(10)
+	cur := nz[0].exp
+	for _, n := range nz {
+		if gap := cur - n.exp; gap > 0 {
+			total.Mul(&total, scale.Exp(ten, big.NewInt(int64(gap)), nil))
+			cur = n.exp
+		}
+		term.SetString(n.digits, 10)
+		if n.neg {
+			term.Neg(&term)
+		}
+		total.Add(&total, &term)
+	}
+	return &total
 }
 
 // sumConsts is the exact sum of a group's constants, the value of a sum aggregate: 0
@@ -117,13 +135,24 @@ func sumConsts(cs []Const) (Const, error) {
 // what keeps MaxSteps a bound on the work a sum does as well as on the join.
 const sumDigitsPerStep = 64
 
-// sumWork is the steps folding cs costs. Every non-zero addend is aligned to the
-// group's whole width (sumNumbers), so the work is addends times width, charged in
-// steps of sumDigitsPerStep digits. A group of fewer than two non-zero numbers, or
-// one wider than maxSumDigits, costs nothing here: sumNumbers returns the one number,
-// or refuses before it aligns anything.
+// sumQuadDigits is the length past which a big-number operation is charged as
+// quadratic: Go parses a decimal string, and multiplies a long total by a long power
+// of ten, in time that grows with the square of the length once it spans many words.
+// Below it the linear charge dominates. An invariant, like sumDigitsPerStep.
+const sumQuadDigits = 1024
+
+// sumWork is the steps folding cs costs, charged before fold runs so MaxSteps bounds
+// the sum's work as well as the join's. It prices fold's three costs:
+//   - each addend's digits parsed once: linear in their length, quadratic past
+//     sumQuadDigits;
+//   - one add per addend into a total up to the group's width wide;
+//   - the scalings by powers of ten, whose gaps add up to the width: at most one
+//     width-by-width multiplication.
+//
+// A group of fewer than two non-zero numbers, or one wider than maxSumDigits, costs
+// nothing here: sumNumbers returns the one number, or refuses before folding.
 func sumWork(cs []Const) int {
-	var low, high, nonZero int
+	var low, high, nonZero, parse int
 	for _, c := range cs {
 		n := c.num
 		if c.kind != KindNumber || n.digits == "0" {
@@ -134,11 +163,18 @@ func sumWork(cs []Const) int {
 			low, high = n.exp, place
 		}
 		low, high = min(low, n.exp), max(high, place)
+		parse += quadCost(len(n.digits))
 		nonZero++
 	}
 	width := high - low
 	if nonZero < 2 || width > maxSumDigits {
 		return 0
 	}
-	return nonZero * (width/sumDigitsPerStep + 1)
+	return parse + nonZero*(width/sumDigitsPerStep+1) + quadCost(width)
+}
+
+// quadCost is the steps for one big-number operation over digits decimal places:
+// linear in steps of sumDigitsPerStep, times a factor that grows past sumQuadDigits.
+func quadCost(digits int) int {
+	return (digits/sumDigitsPerStep + 1) * (digits/sumQuadDigits + 1)
 }
