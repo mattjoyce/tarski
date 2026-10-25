@@ -468,3 +468,27 @@ The claims §7 marked as unchecked were run on Soufflé 2.5 (Homebrew) with a pr
 | `mean` / `avg` | `mean` exists; `avg` is a syntax error | `avg` and `mean` refused, deferred |
 
 The oracle script must skip rules that take min or max over strings.
+
+### 12.1 Multi-atom bodies: Soufflé is not consistent, and tarski does not follow it there
+
+A differential run after slice 3 found that §12 checked only single-atom bodies. Soufflé 2.5
+treats the two shapes differently, over `t(1). t(2).` and
+`s(1,10). s(1,20). s(2,10). s(3,99). s(7,5).`:
+
+| Body | Soufflé 2.5 | tarski (distinct solutions, `_` fresh) |
+|---|---|---|
+| `count : { s(X, _) }` | 5 (every tuple) | 5 |
+| `sum X : { s(X, _) }` | 14 (every tuple) | 14 |
+| `count : { t(X), s(X, _) }` | 2 (distinct named variables) | 3 |
+| `sum X : { t(X), s(X, _) }` | 3 (distinct named variables) | 4 |
+| `count : { t(X), s(X, Y) }` | 3 | 3 |
+
+A single-atom body counts the relation's tuples. A body of several literals is materialised
+over its named variables, so a `_` is projected away before counting. tarski keeps one rule for
+both, distinct solutions with every `_` fresh, which agrees with Soufflé whenever every
+variable in a multi-literal body is named. Named-variable witnesses everywhere would make
+Anam's "how many readings in June", `count : { entry(_, "health.blood-pressure", At, ...) }`,
+count distinct instants rather than readings. This is open question 1 in §11, now with
+evidence; it stays with Matt. Until then the oracle script must skip, or name every variable
+in, a multi-literal aggregate body that contains `_`. To get Soufflé's projection in tarski,
+name the projection as a rule: `w(X) :- t(X), s(X, _).` then `count : { w(X) }`.
