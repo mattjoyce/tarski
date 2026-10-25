@@ -11,8 +11,28 @@ permissions:
 jobs:
   # The canonical gate: format, vet, golangci-lint with go-quality's config
   # (errorlint, funlen 60, revive, forbidigo, gosec), govulncheck, race tests.
+  # Run from a clone outside the workspace, not via the reusable workflow: that one
+  # checks go-quality out inside the module, and the format step then walks into
+  # go-quality's own deliberately dirty fixture (go-quality kanban, gate-walks-own-fixture).
+  # Tool versions match go-check.yml@v1. Return to the reusable workflow once fixed.
   quality:
-    uses: mattjoyce/go-quality/.github/workflows/go-check.yml@v1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false # standard library only: no go.sum to key a cache on
+      - name: install gate tools (pinned as go-check.yml@v1)
+        run: |
+          go install golang.org/x/tools/cmd/goimports@v0.44.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.11.4
+      - name: go-quality gate (v1)
+        run: |
+          git clone --quiet --depth 1 --branch v1 https://github.com/mattjoyce/go-quality "$RUNNER_TEMP/go-quality"
+          bash "$RUNNER_TEMP/go-quality/check.sh" .
 
   # Coverage floor and a bounded fuzz run: the engine promises never to panic on
   # consumer input, and the fuzz suites are what hold it.
