@@ -52,6 +52,6 @@ jobs:
           awk -v p="$pct" 'BEGIN { exit (p >= 80) ? 0 : 1 }'
       - name: fuzz (30s per target)
         run: |
-          for t in FuzzParseCompileEvaluate FuzzTransitiveClosure FuzzNegationAndRepeatedVariables FuzzNumberRoundTrip; do
+          for t in FuzzParseCompileEvaluate FuzzTransitiveClosure FuzzNegationAndRepeatedVariables FuzzNumberRoundTrip FuzzNumberAdd; do
             go test -run '^$' -fuzz "^${t}\$" -fuzztime 30s .
           done
