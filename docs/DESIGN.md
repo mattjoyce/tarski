@@ -194,6 +194,11 @@ type RuleFailure struct {
 // engine's default (whyNotDepth = 8, enough for any policy rule set, small enough that a
 // pathological recursion stays cheap).
 func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool)
+// WhyEmpty explains why a relation holds no tuple at all: the goal is every position open
+// ("_"), so each rule reports the farthest literal any binding reached. ok is false when
+// the relation holds a tuple, is not the plan's, or the evaluation ran without Proofs.
+// For a question that came back empty (Anam card 182). v0.2, additive.
+func (r Result) WhyEmpty(name string, maxDepth int) (a Absence, ok bool)
 
 // Both Proof and Absence render: String() is an indented derivation for a log or an
 // operator; MarshalJSON emits relation, tuple, rule as {set, line, text}, and body or

@@ -21,6 +21,8 @@ Aggregates (card 6), built on master. Tagged once Matt has settled the open ques
   no longer compiles (go vet already flags unkeyed literals).
 - **Bounds.** An aggregate's inner candidates are steps, and a sum's fold is priced by
   `sumWork` and charged before it runs (two commit security reviews).
+- **`Result.WhyEmpty`** (card 8) explains a relation that holds no tuple at all, every
+  position open, for a question that came back empty (Anam card 182). Additive.
 - **Performance.** `NewBase` copies each relation into one backing array: 500k facts build in
   20% less time and 38% less memory (card 7). A wide sum parses each addend once: 85 times
   faster on 200 addends spanning 60,000 digits.

@@ -85,12 +85,38 @@ func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) 
 	if r.proofs == nil || !found || !known || len(t) != arity || rel.has(t) {
 		return Absence{}, false
 	}
-	if maxDepth <= 0 {
-		maxDepth = whyNotDepth
-	}
 	goal := make([]Term, len(t))
 	for i, c := range t {
 		goal[i] = Term{Const: c}
+	}
+	return r.explain(name, goal, maxDepth)
+}
+
+// WhyEmpty explains why a relation holds no tuple at all: the answer to a question that
+// came back empty, which is the worst answer to leave unexplained, since it reads the
+// same as "there is nothing" (Anam card 182). The goal is every position open, so each
+// rule reports the farthest literal any binding reached. ok is false when the relation
+// holds a tuple (ask Proof of one), when it is not a relation of the plan, when the
+// evaluation ran without Options.Proofs, or when a consumer builtin panicked during the
+// walk. Bounded and deterministic as WhyNot is.
+func (r Result) WhyEmpty(name string, maxDepth int) (a Absence, ok bool) {
+	rel, found := r.relations[name]
+	arity, known := r.plan.Arity(name)
+	if r.proofs == nil || !found || !known || len(rel.tuples) > 0 {
+		return Absence{}, false
+	}
+	goal := make([]Term, arity)
+	for i := range goal {
+		goal[i] = Term{Var: "_"}
+	}
+	return r.explain(name, goal, maxDepth)
+}
+
+// explain is WhyNot and WhyEmpty's shared walk over a goal of constants and open
+// positions.
+func (r Result) explain(name string, goal []Term, maxDepth int) (a Absence, ok bool) {
+	if maxDepth <= 0 {
+		maxDepth = whyNotDepth
 	}
 	x := &explainer{r: r, b: &builder{r: r, proofs: map[string]Proof{}, rules: map[*Rule]*Rule{}}, seen: map[string]bool{}}
 	x.seen[goalKey(name, goal)] = true
