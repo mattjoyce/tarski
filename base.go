@@ -61,9 +61,22 @@ func (b Base) With(facts ...Fact) (Base, error) {
 	return out, nil
 }
 
-// group sorts facts by relation, refusing any the schema does not allow.
+// group sorts facts by relation, refusing any the schema does not allow. Each
+// relation's tuples are copied into one backing array sized up front, so a base of half
+// a million facts costs a handful of allocations rather than half a million.
 func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
-	added := map[string][]Tuple{}
+	counts := map[string]int{}
+	for _, f := range facts {
+		counts[f.Relation]++
+	}
+	added := make(map[string][]Tuple, len(counts))
+	backing := make(map[string][]Const, len(counts))
+	for name, c := range counts {
+		if n, ok := b.arities[name]; ok {
+			added[name] = make([]Tuple, 0, c)
+			backing[name] = make([]Const, 0, c*n)
+		}
+	}
 	for _, f := range facts {
 		n, ok := b.arities[f.Relation]
 		if !ok {
@@ -76,7 +89,12 @@ func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 		}
 		// The copy comes first: the caller's tuple is theirs to change at any time,
 		// a check is the caller's code, and what is checked must be what is stored.
-		f.Tuple = append(Tuple(nil), f.Tuple...)
+		// The full slice expression caps each tuple at its own width, so nothing
+		// appended to one tuple can write into the next.
+		start := len(backing[f.Relation])
+		backing[f.Relation] = append(backing[f.Relation], f.Tuple...)
+		end := len(backing[f.Relation])
+		f.Tuple = Tuple(backing[f.Relation][start:end:end])
 		if err := checkUTF8(f); err != nil {
 			return nil, err
 		}
@@ -90,7 +108,11 @@ func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 
 // rebuild is a sealed relation, indexed at every position, of prior's tuples (if any) then added, in that order.
 func rebuild(prior *relation, added []Tuple, arity int) *relation {
-	r := newRelBuilder()
+	size := len(added)
+	if prior != nil {
+		size += len(prior.tuples)
+	}
+	r := &relBuilder{tuples: make([]Tuple, 0, size), set: make(map[string]bool, size)}
 	if prior != nil {
 		for _, t := range prior.tuples {
 			r.add(t)
