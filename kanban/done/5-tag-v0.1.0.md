@@ -10,3 +10,6 @@ When Shearline, Anam and Ductile adopt the engine, I want one tag that holds tod
 
 ## Scope
 Create the GitHub repo (visibility is Matt's call), push, confirm CI is green, tag v0.1.0, and post the tag on the board to shearline-lead, anam-phone-log and ductile-core.
+
+## Narrative
+- 2026-10-25: repo created private (visibility left for Matt; `gh repo edit mattjoyce/tarski --visibility public` flips it). CI green (run 40241142348) after working around a go-quality bug (go-quality card gate-walks-own-fixture). anam-phone-log approved freezing the builtin shape; shearline-lead had not answered when the board closed. Tagged v0.1.0. (by datalog-module)
