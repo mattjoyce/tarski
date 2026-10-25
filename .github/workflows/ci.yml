@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The canonical gate: format, vet, golangci-lint with go-quality's config
+  # (errorlint, funlen 60, revive, forbidigo, gosec), govulncheck, race tests.
+  quality:
+    uses: mattjoyce/go-quality/.github/workflows/go-check.yml@v1
+
+  # Coverage floor and a bounded fuzz run: the engine promises never to panic on
+  # consumer input, and the fuzz suites are what hold it.
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false # standard library only: no go.sum to key a cache on
+      - name: coverage floor (80%)
+        run: |
+          go test -count=1 -coverprofile=cover.out ./...
+          pct=$(go tool cover -func=cover.out | awk '/^total:/ {sub("%","",$3); print $3}')
+          echo "coverage ${pct}%"
+          awk -v p="$pct" 'BEGIN { exit (p >= 80) ? 0 : 1 }'
+      - name: fuzz (30s per target)
+        run: |
+          for t in FuzzParseCompileEvaluate FuzzTransitiveClosure FuzzNegationAndRepeatedVariables; do
+            go test -run '^$' -fuzz "^${t}\$" -fuzztime 30s .
+          done
