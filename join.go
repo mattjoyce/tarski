@@ -36,6 +36,11 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relBuilde
 	if i == deltaPos {
 		rel = source{bld: delta}
 	}
+	if ev.chargeScans {
+		if err := ev.scan(r.Head.Name, rel, l.Atom.Args, env); err != nil {
+			return err
+		}
+	}
 	for _, idx := range matching(rel, l.Atom.Args, env) {
 		if ev.over != nil {
 			return ev.over
@@ -95,6 +100,15 @@ func (ev *evaluator) stepN(relation string, n int) error {
 	return nil
 }
 
+// scan charges finding the candidates for args in rel, for an evaluator that charges
+// scans (chargeScans): a why-not's, whose relations are all sealed.
+func (ev *evaluator) scan(head string, rel source, args []Term, env map[string]Const) error {
+	if rel.val == nil {
+		return nil
+	}
+	return ev.stepN(head, scanCost(rel.val, args, env))
+}
+
 // deadline is the evaluation's error when its context is done. It is asked at entry,
 // before each rule is applied, every stepsPerDeadlineCheck-th join step inside a
 // rule, and before the result is returned: a rule that visits no tuple (a ground
@@ -116,6 +130,11 @@ const stepsPerDeadlineCheck = 1024
 // tries is a join step like any other, charged against MaxSteps and the deadline: a
 // negation can scan as much as a join, and an error here is the bound's, not a miss.
 func (ev *evaluator) exists(head string, rel source, args []Term, env map[string]Const) (bool, error) {
+	if ev.chargeScans {
+		if err := ev.scan(head, rel, args, env); err != nil {
+			return false, err
+		}
+	}
 	for _, idx := range matching(rel, args, env) {
 		if err := ev.step(head); err != nil {
 			return false, err

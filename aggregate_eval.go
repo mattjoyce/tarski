@@ -51,26 +51,82 @@ type aggValue struct {
 	mixed []Const
 }
 
+// maxProofGroup is how many witnesses a proof keeps of one aggregate-derived tuple's
+// group; Proof.GroupSize states the whole group's size beside them. A count over 10^5
+// entries would otherwise carry 10^5 witnesses in every receipt. It is a constant and
+// not an option so that a proof's bytes stay a function of (plan, base), as they are
+// for every other tuple (docs/design/aggregates.md §5.2, Q4).
+const maxProofGroup = 64
+
 // aggregate is join's step for the aggregate literal at ordered index i: its value for
 // the group the bindings so far select binds the result, or tests it when the result is
 // already bound, and the join goes on. A group that derives no tuple ends this branch.
 func (ev *evaluator) aggregate(r *rule, i int, env map[string]Const, delta *relBuilder, deltaPos int, emit func()) error {
 	a := r.aggs[i]
-	v, err := ev.aggValue(a, env)
+	v, k, err := ev.aggValue(a, env)
 	if err != nil || !v.ok {
 		return err
 	}
 	res := a.lit.Result.Var
-	if c, bound := env[res]; bound {
-		if !c.same(v.value) {
-			return nil
-		}
-		return ev.join(r, i+1, env, delta, deltaPos, emit)
+	c, bound := env[res]
+	if bound && !c.same(v.value) {
+		return nil
 	}
-	env[res] = v.value
-	err = ev.join(r, i+1, env, delta, deltaPos, emit)
-	delete(env, res)
+	if ev.proofs != nil {
+		ev.aggPath = append(ev.aggPath, usedGroup{lit: a.lit, key: k, size: v.size})
+	}
+	if bound {
+		err = ev.join(r, i+1, env, delta, deltaPos, emit)
+	} else {
+		env[res] = v.value
+		err = ev.join(r, i+1, env, delta, deltaPos, emit)
+		delete(env, res)
+	}
+	if ev.proofs != nil {
+		ev.aggPath = ev.aggPath[:len(ev.aggPath)-1]
+	}
 	return err
+}
+
+// usedGroup is one aggregate literal's group on the join's current path, for the proof
+// of a tuple the path derives (proofs only).
+type usedGroup struct {
+	lit  *Aggregate
+	key  aggKey
+	size int
+}
+
+// groupRecord is the group one aggregate-derived tuple was first taken over: the kept
+// witnesses and the whole size.
+type groupRecord struct {
+	witnesses [][]bodyTuple
+	size      int
+}
+
+// proofKey identifies a tuple of a relation: unambiguous, since a name holds no NUL
+// (isName) and a key is self-delimiting.
+func proofKey(name string, t Tuple) string { return name + "\x00" + t.key() }
+
+// groupOf is the group a derivation of r on the current path was taken over: every
+// aggregate literal's kept witnesses, concatenated in the rule's written order and
+// cut at maxProofGroup, and the sum of the groups' sizes.
+func (ev *evaluator) groupOf(r *rule) groupRecord {
+	var g groupRecord
+	for _, l := range r.Body {
+		if l.Aggregate == nil {
+			continue
+		}
+		for _, used := range ev.aggPath {
+			if used.lit != l.Aggregate {
+				continue
+			}
+			kept := ev.witnesses[used.key]
+			g.size += used.size
+			room := maxProofGroup - len(g.witnesses)
+			g.witnesses = append(g.witnesses, kept[:min(room, len(kept))]...)
+		}
+	}
+	return g
 }
 
 // aggValue is the aggregate's value for the group env selects, computed once per group
@@ -83,7 +139,7 @@ func (ev *evaluator) aggregate(r *rule, i int, env map[string]Const, delta *relB
 // positive atoms are walked one distinct tuple at a time, so two solutions differ in
 // at least one atom's tuple: the solutions are the distinct combinations of tuples, the
 // witness set of §1.1, with no second pass to remove duplicates.
-func (ev *evaluator) aggValue(a *aggPlan, env map[string]Const) (aggValue, error) {
+func (ev *evaluator) aggValue(a *aggPlan, env map[string]Const) (aggValue, aggKey, error) {
 	var key strings.Builder
 	inner := make(map[string]Const, len(a.group))
 	for _, g := range a.group {
@@ -93,19 +149,30 @@ func (ev *evaluator) aggValue(a *aggPlan, env map[string]Const) (aggValue, error
 	}
 	k := aggKey{plan: a, group: key.String()}
 	if v, done := ev.aggMemo[k]; done {
-		return v, nil
+		return v, k, nil
 	}
 	if err := ev.step(a.inner.Head.Name); err != nil {
-		return aggValue{}, err
+		return aggValue{}, k, err
 	}
 	f := folder{op: a.lit.Op, target: a.lit.Target.Var}
-	if err := ev.join(a.inner, 0, inner, nil, -1, func() { f.add(inner) }); err != nil {
-		return aggValue{}, err
+	emit := func() { f.add(inner) }
+	var log *witnessLog
+	if ev.proofs != nil {
+		// The inner join pushes its positive tuples onto the proof stack above the outer
+		// rule's and pops them again, so the witness is the stack above base.
+		log = &witnessLog{base: len(ev.stack)}
+		emit = func() {
+			f.add(inner)
+			log.add(ev.stack)
+		}
+	}
+	if err := ev.join(a.inner, 0, inner, nil, -1, emit); err != nil {
+		return aggValue{}, k, err
 	}
 	if f.op == "sum" && f.mixed == nil {
 		// The fold aligns every addend to the group's width: charge it before doing it.
 		if err := ev.stepN(a.inner.Head.Name, sumWork(f.values)); err != nil {
-			return aggValue{}, err
+			return aggValue{}, k, err
 		}
 	}
 	v, err := f.value()
@@ -114,13 +181,49 @@ func (ev *evaluator) aggValue(a *aggPlan, env map[string]Const) (aggValue, error
 		if errors.As(err, &tl) {
 			tl.Relation, tl.Tuples, tl.Bytes, tl.Steps = a.inner.Head.Name, ev.tuples, ev.bytes, ev.steps
 		}
-		return aggValue{}, err
+		return aggValue{}, k, err
+	}
+	if log != nil {
+		if ev.witnesses == nil {
+			ev.witnesses = map[aggKey][][]bodyTuple{}
+		}
+		ev.witnesses[k] = log.witnesses()
 	}
 	if ev.aggMemo == nil {
 		ev.aggMemo = map[aggKey]aggValue{}
 	}
 	ev.aggMemo[k] = v
-	return v, nil
+	return v, k, nil
+}
+
+// witnessLog keeps a group's first maxProofGroup witnesses as the inner join emits
+// them, each the proof stack above base, in one backing array.
+type witnessLog struct {
+	base int
+	flat []bodyTuple
+	ends []int
+}
+
+func (w *witnessLog) add(stack []bodyTuple) {
+	if len(w.ends) < maxProofGroup {
+		w.flat = append(w.flat, stack[w.base:]...)
+		w.ends = append(w.ends, len(w.flat))
+	}
+}
+
+// witnesses is the kept witnesses, each a slice of the backing array capped at its
+// end, so no holder can append into the next.
+func (w *witnessLog) witnesses() [][]bodyTuple {
+	if len(w.ends) == 0 {
+		return nil
+	}
+	out := make([][]bodyTuple, len(w.ends))
+	start := 0
+	for i, end := range w.ends {
+		out[i] = w.flat[start:end:end]
+		start = end
+	}
+	return out
 }
 
 // folder takes one group's witnesses, in witness order, to its value.
