@@ -75,7 +75,20 @@ func parseNumber(lexeme string) (number, error) {
 	if i != len(lexeme) {
 		return number{}, errNotANumber
 	}
-	return canonical(neg, intPart+frac, exp-len(frac)), nil
+	n := canonical(neg, intPart+frac, exp-len(frac))
+	// The bound holds on what is written back, not only on what was read: "10e999999999"
+	// is 1e+1000000000, a text this parser would refuse, so an Answer holding it could
+	// not be read again. Every accepted value's canonical text reads back.
+	if e := n.sciExponent(); e > maxExponent || e < -maxExponent {
+		return number{}, errExponentRange
+	}
+	return n, nil
+}
+
+// sciExponent is the exponent the scientific form writes: the power of ten of the
+// leading digit. Zero has exponent zero.
+func (n number) sciExponent() int {
+	return len(n.digits) - 1 + n.exp
 }
 
 // exponent reads the optional exponent at i, bounded by maxExponent before any
@@ -177,7 +190,7 @@ func (n number) scientific() string {
 	if len(n.digits) > 1 {
 		mantissa += "." + n.digits[1:]
 	}
-	e := len(n.digits) - 1 + n.exp
+	e := n.sciExponent()
 	if e < 0 {
 		return mantissa + "e-" + strconv.Itoa(-e)
 	}

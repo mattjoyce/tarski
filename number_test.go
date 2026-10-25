@@ -266,3 +266,54 @@ func TestIntAndFloat_KeepTheGoOrder(t *testing.T) {
 		t.Errorf("Int at the limits = %q, %q", tarski.Int(math.MinInt64).Text(), tarski.Int(math.MaxInt64).Text())
 	}
 }
+
+// TestNumber_TextReadsBack holds the writer to the reader at the exponent bound: a
+// lexeme accepted only if its canonical text is accepted too.
+func TestNumber_TextReadsBack(t *testing.T) {
+	tests := []struct {
+		lexeme string
+		ok     bool
+	}{
+		{"1e999999999", true},
+		{"1e-999999999", true},
+		{"9.99e999999999", true},
+		{"10e999999999", false},    // 1e+1000000000
+		{"123e999999998", false},   // 1.23e+1000000000
+		{"0.1e-999999999", false},  // 1e-1000000000
+		{"0.01e-999999999", false}, // 1e-1000000001
+		{"0e999999999", true},      // zero has no magnitude
+	}
+	for _, tt := range tests {
+		t.Run(tt.lexeme, func(t *testing.T) {
+			c, err := tarski.Number(tt.lexeme)
+			if (err == nil) != tt.ok {
+				t.Fatalf("Number(%q) err = %v, want ok=%v", tt.lexeme, err, tt.ok)
+			}
+			if err != nil {
+				return
+			}
+			back, err := tarski.Number(c.Text())
+			if err != nil || back != c {
+				t.Errorf("Number(%q).Text() = %q reads back as %v, %v", tt.lexeme, c.Text(), back, err)
+			}
+		})
+	}
+}
+
+// FuzzNumberRoundTrip: whatever Number accepts, its canonical text is accepted and
+// names the same constant.
+func FuzzNumberRoundTrip(f *testing.F) {
+	for _, s := range []string{"0", "-1.5", "1e999999999", "10e999999999", "9007199254740993", "0.000001", "1E+5"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, lexeme string) {
+		c, err := tarski.Number(lexeme)
+		if err != nil {
+			return
+		}
+		back, err := tarski.Number(c.Text())
+		if err != nil || back != c {
+			t.Fatalf("Number(%q).Text() = %q reads back as %v, %v", lexeme, c.Text(), back, err)
+		}
+	})
+}
