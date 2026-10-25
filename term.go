@@ -3,7 +3,6 @@ package tarski
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -21,13 +20,14 @@ const (
 	KindBool
 )
 
-// Const is one constant: a string, a number or a boolean. Numbers are float64, as
-// JSON readers commonly take them, and keep one canonical lexeme so that 1 and 1.0
+// Const is one constant: a string, a number or a boolean. A number is an exact
+// decimal: 1792269840000 stays 1792269840000 and 9007199254740993 stays itself,
+// where a float64 rounded both. It keeps one canonical lexeme, so that 1 and 1.0
 // are the same constant and hash the same.
 type Const struct {
 	kind Kind
 	s    string
-	n    float64
+	num  number
 }
 
 // String makes a string constant. The engine's string domain is valid UTF-8: JSON
@@ -40,85 +40,47 @@ func String(s string) Const { return Const{kind: KindString, s: s} }
 // Bool makes a boolean constant.
 func Bool(b bool) Const { return Const{kind: KindBool, s: strconv.FormatBool(b)} }
 
-// Number makes a number constant from a JSON lexeme. A lexeme that is not a finite
-// number is refused: NaN would equal everything under compare, and Inf has no JSON
-// text. Negative zero is zero, so that identity and comparison agree on it.
+// Number makes a number constant from a JSON lexeme. The value is exact: the lexeme
+// is read as the decimal it is, not as a float64 that rounds it. A lexeme that is
+// not a number as JSON spells one is ErrSyntax, and so is an exponent beyond nine
+// digits either way. NaN and the infinities have no JSON text and are refused as
+// not finite. Negative zero is zero, so that identity and comparison agree on it.
 func Number(lexeme string) (Const, error) {
-	n, err := strconv.ParseFloat(lexeme, 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return Const{}, fmt.Errorf("%w: %q is not a number", ErrSyntax, lexeme)
-	}
-	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+	c, err := newNumber(lexeme)
+	if err != nil && notFinite(lexeme) {
 		return Const{}, fmt.Errorf("%w: %q is not a finite number", ErrSyntax, lexeme)
 	}
-	if !isJSONNumber(lexeme) {
-		return Const{}, fmt.Errorf("%w: %q is not a number as JSON spells one", ErrSyntax, lexeme)
-	}
-	return number(n), nil
+	return c, err
 }
 
-// isJSONNumber reports whether s is a number as JSON spells one: an optional minus,
-// an integer part with no leading zero, an optional fraction, an optional exponent.
-// Go's ParseFloat reads more (a plus, a leading zero, hex, underscores, a bare point)
-// and the canonical lexeme is JSON, so what comes in is held to what goes out.
-func isJSONNumber(s string) bool {
-	i := 0
-	if i < len(s) && s[i] == '-' {
-		i++
-	}
-	digits := func() int {
-		start := i
-		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-			i++
-		}
-		return i - start
-	}
-	switch {
-	case i < len(s) && s[i] == '0':
-		i++
-	case digits() == 0:
-		return false
-	}
-	if i < len(s) && s[i] == '.' {
-		i++
-		if digits() == 0 {
-			return false
-		}
-	}
-	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
-		i++
-		if i < len(s) && (s[i] == '+' || s[i] == '-') {
-			i++
-		}
-		if digits() == 0 {
-			return false
-		}
-	}
-	return i == len(s)
+// notFinite reports whether s spells NaN or an infinity, so that Number can say why
+// it refused one.
+func notFinite(s string) bool {
+	f, err := strconv.ParseFloat(s, 64)
+	return err == nil && (math.IsNaN(f) || math.IsInf(f, 0))
 }
 
 // Int makes a number constant from an integer, the same constant Number gives for its
-// decimal text. Like every number here it is a float64 underneath, so an integer
-// beyond 2^53 is held as the nearest one that fits.
-func Int(n int64) Const { return number(float64(n)) }
+// decimal text. Every int64 is held exactly.
+func Int(n int64) Const {
+	d := strconv.FormatInt(n, 10)
+	neg := n < 0
+	if neg {
+		d = d[1:]
+	}
+	num := canonical(neg, d, 0)
+	return Const{kind: KindNumber, s: num.text(), num: num}
+}
 
-// Float makes a number constant from a float64, the same constant Number gives for the
-// value's text: Float(1) equals Number("1"), and -0 is 0. NaN and the infinities are
-// ErrInvalid, for the reasons Number refuses them.
+// Float makes a number constant from a float64. Its value is the shortest decimal
+// that reads back as f (strconv's 'g' format at precision -1), held exactly, so
+// Float(1.5) equals Number("1.5"), Float(1e21) equals Number("1e21"), and -0 is 0.
+// NaN and the infinities are ErrInvalid, for the reasons Number refuses them.
 func Float(f float64) (Const, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return Const{}, fmt.Errorf("%w: %v is not a finite number", ErrInvalid, f)
 	}
-	return number(f), nil
-}
-
-// number is the one place a number constant is made from a finite float64, so every
-// constructor agrees on its lexeme and on zero having one sign.
-func number(n float64) Const {
-	if n == 0 {
-		n = 0 // not -0
-	}
-	return Const{kind: KindNumber, s: strconv.FormatFloat(n, 'g', -1, 64), n: n}
+	return newNumber(strconv.FormatFloat(f, 'g', -1, 64))
 }
 
 // Kind reports the constant's kind.
@@ -195,7 +157,8 @@ func (c Const) writeKey(b *strings.Builder) {
 }
 
 // compare orders two constants of one kind: strings lexically (fact-times are
-// fixed-width, so that is chronological), numbers numerically, false before true.
+// fixed-width, so that is chronological), numbers exactly by value, false before
+// true.
 // ok is false when the kinds differ: they are unequal, and not ordered.
 func compare(a, b Const) (cmp int, ok bool) {
 	if a.kind != b.kind {
@@ -203,13 +166,7 @@ func compare(a, b Const) (cmp int, ok bool) {
 	}
 	switch a.kind {
 	case KindNumber:
-		switch {
-		case a.n < b.n:
-			return -1, true
-		case a.n > b.n:
-			return 1, true
-		}
-		return 0, true
+		return a.num.cmp(b.num), true
 	default:
 		return strings.Compare(a.s, b.s), true
 	}

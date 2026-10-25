@@ -11,9 +11,11 @@ import (
 
 // Number takes finite numbers only. NaN would compare equal to everything, and Inf has
 // no JSON text, so neither becomes a constant; a lexeme that is no number at all says so.
+// 1e999 is finite: it overflowed a float64, and an exact decimal holds it (see
+// TestNumber_CanonicalText).
 func TestNumber_RefusesWhatIsNotFinite(t *testing.T) {
 	t.Parallel()
-	for _, lexeme := range []string{"NaN", "nan", "Inf", "-inf", "+Infinity", "1e999", "-1e999"} {
+	for _, lexeme := range []string{"NaN", "nan", "Inf", "-inf", "+Infinity"} {
 		_, err := tarski.Number(lexeme)
 		if !errors.Is(err, tarski.ErrSyntax) || !strings.Contains(err.Error(), "not a finite number") {
 			t.Errorf("Number(%q) = %v, want ErrSyntax, not a finite number", lexeme, err)
@@ -78,10 +80,13 @@ func TestIntAndFloat_AgreeWithNumber(t *testing.T) {
 			t.Errorf("Int made %q, Number(%q) = %q, %v", c.made.Text(), c.text, want.Text(), err)
 		}
 	}
-	for f, text := range map[float64]string{1: "1", 1.5: "1.5", -2.25: "-2.25", 1e21: "1e21", 146.0: "146"} {
+	for f, text := range map[float64]string{
+		1: "1", 1.5: "1.5", -2.25: "-2.25", 1e21: "1000000000000000000000", 146.0: "146",
+		1792269840000: "1792269840000", 0.1: "0.1", 1e-7: "0.0000001",
+	} {
 		got, err := tarski.Float(f)
 		want, _ := tarski.Number(text)
-		if err != nil || got != want || got.Kind() != tarski.KindNumber {
+		if err != nil || got != want || got.Kind() != tarski.KindNumber || got.Text() != text {
 			t.Errorf("Float(%v) = %q, %v; want %q", f, got.Text(), err, want.Text())
 		}
 	}

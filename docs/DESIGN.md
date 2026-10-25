@@ -15,15 +15,28 @@ var ErrSyntax, ErrInvalid, ErrTooLarge error          // the three; *TooLarge st
 
 type Kind; const KindString, KindNumber, KindBool      // unchanged
 type Const; func String(string) Const; func Bool(bool) Const
-func Number(lexeme string) (Const, error)      // a JSON number lexeme, finite (else ErrSyntax); -0 is 0
-func Int(int64) Const; func Float(float64) (Const, error)   // the same constants Number makes; Float refuses NaN/Inf with ErrInvalid (no lexeme to blame)
+func Number(lexeme string) (Const, error)      // a JSON number lexeme, held exactly (else ErrSyntax); -0 is 0
+func Int(int64) Const; func Float(float64) (Const, error)   // the same constants Number makes; Float(f) is Number of f's shortest round-trip text; Float refuses NaN/Inf with ErrInvalid (no lexeme to blame)
 // The string domain is valid UTF-8: the lexer refuses a literal that is not,
 // NewBase/With refuse a fact that is not, and Compile refuses a hand-built constant
 // that is not, since JSON would fold invalid bytes into U+FFFD and two distinct
 // constants would share an Answer hash. A string literal's escapes are JSON's or
 // Go's: what a JSON encoder writes (\/, a surrogate pair) and what a person writes
-// (\x41, \U0001F600) both read; a lone surrogate reads as neither. Numbers are
-// float64: an integer beyond 2^53 is not an exact identifier; use a string for one.
+// (\x41, \U0001F600) both read; a lone surrogate reads as neither.
+// Numbers are exact decimals (ported from Anam, card 1), not float64. Number reads
+// JSON's number grammar only: no plus, leading zero, hex, underscore or bare point,
+// and NaN/Inf are refused as not finite. The value is what the lexeme says, nothing
+// rounded: 9007199254740993 is itself, and 1 and 1.0000000000000000001 are two
+// numbers. An exponent is bounded at nine digits either way (maxExponent, Anam card
+// 224) and refused past it, before any arithmetic. One value has one canonical text,
+// and identity, equality and order follow the value exactly: 1, 1.0 and 1e0 are one
+// constant with one hash. The text is the plain decimal (an integer in full, so
+// 1792269840000 and 1e21 print every digit; 0.00001, not 1e-05), and the exact
+// scientific form (1e+999, 1.23e-70) only when the plain form would pass 64
+// characters (maxNumberDigits). The text matches Anam's, so Anam's stored receipts
+// hold; for Shearline it changes the text, and so the hash, of any number at or
+// above 1e6 or below 1e-4 in magnitude that float64's shortest form wrote with an
+// exponent.
 // A relation name is a lower-case letter then letters, digits and underscores, and a
 // variable an upper-case letter or underscore then the same, wherever it comes from:
 // Compile holds a hand-built Program and a Schema to it, as the lexer holds text.
