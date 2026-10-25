@@ -20,3 +20,13 @@ When Anam asks how many readings fell in June or what the month's spend totals, 
 ## Plan
 1. Design doc `docs/design/aggregates.md`: invariants first (Lamport × Thomas/Hunt Before pass), admission check (Helland × Stonebraker).
 2. Implement on a branch, gate green, golden tests unchanged.
+
+## Narrative
+- 2026-10-25: design written to `docs/design/aggregates.md` (fable rung, Lamport × Thomas/Hunt and Helland × Stonebraker passes). Eleven sections, five slices. Its §11 lists ten questions for Matt. Matt was away and asked for work to continue, so the build proceeds on the design's recommendation for each, recorded here as assumptions. v0.2.0 is not tagged until Matt has reviewed them; any can change before the tag.
+  - Witness semantics: Soufflé's distinct solutions of the inner body.
+  - Mixed kinds in a group: no tuple, with why-not naming the constant.
+  - Empty groups: count and sum give 0; min and max derive nothing.
+  - Proof group capped at 64 witnesses, with GroupSize.
+  - Sum overflow: `*TooLarge` with a new `BoundNumber`.
+  - min/max over strings allowed. avg deferred, refused with a message. `Plan.HasAggregates` only. Several aggregates per rule allowed. Slice 2 lands the syntax inert.
+  - Soufflé claims marked in §7 are to be checked against a real Soufflé before slice 3. (by datalog-module)
