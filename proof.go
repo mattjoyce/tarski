@@ -8,6 +8,12 @@ import "slices"
 // negations contribute no body entry. The tree is finite and acyclic: a body tuple was
 // always derived strictly before its head.
 //
+// An aggregate contributes no body entry yet either: the proof of a tuple a rule with an
+// aggregate derived holds the rule and its positive atoms outside the braces, and not
+// the group the aggregate was taken over. The group is planned as an additive field
+// (docs/design/aggregates.md §5, card 6 slice 4); until it lands, read the aggregate's
+// inputs from the rule text and the result.
+//
 // It is a DAG shared as values: a tuple that appears in several bodies has one Proof
 // value, so the size is linear in the derivation records, not in the unfolded tree.
 // Rule is a copy the holder may keep or change; the plan is not reachable through it.

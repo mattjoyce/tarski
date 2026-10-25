@@ -36,8 +36,9 @@ type Absence struct {
 	// matches"): the two render apart, since a missing fact and a rule set with no
 	// rule for the case are different things to fix.
 	Rules []RuleFailure
-	// Truncated is set when the walk hit the depth or the step limit. What is here is
-	// still true; there is more it did not look at.
+	// Truncated is set when the walk hit the depth or the step limit, or reached an
+	// aggregate literal, which the walk does not explain yet. What is here is still
+	// true; there is more it did not look at.
 	Truncated bool
 }
 
@@ -52,7 +53,8 @@ type RuleFailure struct {
 	// it is the one that held, since that is what stopped the rule. A zero Literal (no
 	// Atom, no Compare) means the walk found no failing literal: the body matched in
 	// full, which cannot happen against the result the rule ran over, or the step limit
-	// ended the walk first (Absence.Truncated tells which).
+	// ended the walk first, or the walk reached an aggregate literal, which this version
+	// does not explain (Absence.Truncated is set for both).
 	Failed Literal
 	// Because explains why Failed found nothing, when it is a positive atom: over a
 	// derived relation, the rules that did not derive it; over a base relation, an
@@ -178,6 +180,11 @@ func (x *explainer) failure(ru *rule, goal []Term, depth int) (rf RuleFailure, c
 	}
 	w.walk(0, env)
 	rf = RuleFailure{Rule: x.b.rule(&ru.Rule), Bound: w.bound(env)}
+	if w.opaque {
+		// A failure found before the aggregate may not be the farthest one, so none is
+		// claimed: the rule is reported with no failing literal, cut short.
+		return rf, true, true
+	}
 	if !w.found {
 		return rf, false, true
 	}

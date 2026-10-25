@@ -25,6 +25,8 @@ func FuzzParseCompileEvaluate(f *testing.F) {
 		`out(X, L) :- input(X), L = max Y : { input(Y), prefix(X, Y) }, M = min Y : { input(Y) }.`,
 		`count(X) :- input(X). sum(N) :- N = count : { count(_) }.`, `out(N) :- N = avg X : { input(X) }.`,
 		`out(N) :- N = count : { M = count : { input(_) } }.`, `out(N) :- N = count : { }.`,
+		`out(X, N) :- input(X), N = count : { input(Y), Y != X }.`, `out(S) :- S = sum X : { input(X) }.`,
+		`a(X) :- input(X). out(X, N) :- a(X), N = min Y : { a(Y), not input(Y) }.`,
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -40,10 +42,10 @@ func FuzzParseCompileEvaluate(f *testing.F) {
 		checkStringsAreText(t, p)
 		schema := tarski.Schema{Arities: map[string]int{"input": 1}}
 		plan, err := tarski.Compile(schema, p)
-		// What the parser makes passes the shape check, so a parsed aggregate reaches the
-		// inert refusal and is never reported as malformed.
-		if holdsAggregate(p) && (err == nil || !strings.Contains(err.Error(), "aggregates are not evaluated yet")) {
-			t.Fatalf("Compile of a parsed aggregate = %v, want the inert refusal", err)
+		// What the parser makes passes the shape check, so a parsed aggregate is never
+		// reported as malformed (checkShape's refusals name "program 1, rule N").
+		if holdsAggregate(p) && err != nil && strings.Contains(err.Error(), "program 1, rule ") {
+			t.Fatalf("Compile of a parsed aggregate = %v, want no shape refusal", err)
 		}
 		if err != nil {
 			return
