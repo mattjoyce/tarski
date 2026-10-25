@@ -7,7 +7,8 @@
 // unsafe variables, unknown relations, wrong arities, unstratifiable negation and any
 // atom a schema check refuses are each reported with a message that says what to
 // change. A relation a program declares and nothing defines is empty, which is how a
-// rule set leaves a hook for its consumer to fill.
+// rule set leaves a hook for its consumer to fill. Schema.Builtins lets a consumer add
+// guards in its own vocabulary beside the engine's prefix, suffix and contains.
 //
 // The base relations are plain tuples. NewBase holds facts under a Schema, and
 // Base.With adds more as a new value, sharing every relation the new facts leave

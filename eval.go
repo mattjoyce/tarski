@@ -35,6 +35,8 @@ type Options struct {
 // calls may share one. The deadline on ctx, opts.MaxBytes and opts.MaxSteps bound it.
 // A base built under a schema other than the plan's is ErrInvalid. A context already done fails
 // at once, before any join, so the deadline is honoured however small the evaluation.
+// A consumer builtin that panics fails the evaluation with ErrInvalid, never a partial
+// result; the panic does not escape.
 func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("tarski: evaluation stopped: %w", err)
@@ -42,7 +44,7 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if err := plan.accepts(base); err != nil {
 		return Result{}, err
 	}
-	ev := &evaluator{ctx: ctx, db: map[string]source{}, opts: opts}
+	ev := &evaluator{ctx: ctx, db: map[string]source{}, opts: opts, builtins: plan.builtins}
 	if opts.Proofs {
 		ev.proofs = map[string]map[string]*derivation{}
 	}
@@ -96,6 +98,7 @@ type evaluator struct {
 	stack  []bodyTuple
 
 	opts          Options
+	builtins      builtinTable // the plan's, read only
 	bytes, tuples int
 	over          *TooLarge
 }
@@ -241,11 +244,12 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relBuilde
 	}
 	l := r.ordered[i]
 	switch {
-	case l.Compare != nil || isBuiltin(l.Atom.Name):
-		if guardHolds(l, env) {
-			return ev.join(r, i+1, env, delta, deltaPos, emit)
+	case l.Compare != nil || ev.builtins.has(l.Atom.Name):
+		ok, err := ev.builtins.guardHolds(l, env)
+		if err != nil || !ok {
+			return err
 		}
-		return nil
+		return ev.join(r, i+1, env, delta, deltaPos, emit)
 	case l.Negated:
 		found, err := ev.exists(r.Head.Name, ev.db[l.Atom.Name], l.Atom.Args, env)
 		if err != nil {
@@ -360,10 +364,10 @@ func holds(c Comparison, env map[string]Const) bool {
 }
 
 // guardHolds evaluates a comparison or a built-in literal under env. The why-not walk
-// uses it too.
-func guardHolds(l Literal, env map[string]Const) bool {
+// uses it too. Only a builtin that panics returns an error.
+func (t builtinTable) guardHolds(l Literal, env map[string]Const) (bool, error) {
 	if l.Compare != nil {
-		return holds(*l.Compare, env)
+		return holds(*l.Compare, env), nil
 	}
-	return holdsBuiltin(l, env)
+	return t.holds(l, env)
 }
