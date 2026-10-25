@@ -1,0 +1,236 @@
+# tarski: design contract
+
+The engine's API and evaluation invariants. Carried from Shearline's `docs/DESIGN.md` § Package
+`datalog` at shearline `c4f75ab`, the day the engine was cut into its own module; the package is
+renamed `tarski` and error messages are prefixed `tarski:`. Where this file and the code differ,
+the code is wrong or this file is stale: fix one in the same commit. The history of how each
+clause was decided is in Shearline's `docs/reviews/` and `docs/DESIGN.md` § Decided with Matt.
+
+
+Carried from Anam's `internal/query` with the package renamed. Error messages are prefixed
+`tarski:` (they were `query:` in Anam, `datalog:` in Shearline).
+
+```go
+var ErrSyntax, ErrInvalid, ErrTooLarge error          // the three; *TooLarge still Is(ErrTooLarge)
+
+type Kind; const KindString, KindNumber, KindBool      // unchanged
+type Const; func String(string) Const; func Bool(bool) Const
+func Number(lexeme string) (Const, error)      // a JSON number lexeme, finite (else ErrSyntax); -0 is 0
+func Int(int64) Const; func Float(float64) (Const, error)   // the same constants Number makes; Float refuses NaN/Inf with ErrInvalid (no lexeme to blame)
+// The string domain is valid UTF-8: the lexer refuses a literal that is not,
+// NewBase/With refuse a fact that is not, and Compile refuses a hand-built constant
+// that is not, since JSON would fold invalid bytes into U+FFFD and two distinct
+// constants would share an Answer hash. A string literal's escapes are JSON's or
+// Go's: what a JSON encoder writes (\/, a surrogate pair) and what a person writes
+// (\x41, \U0001F600) both read; a lone surrogate reads as neither. Numbers are
+// float64: an integer beyond 2^53 is not an exact identifier; use a string for one.
+// A relation name is a lower-case letter then letters, digits and underscores, and a
+// variable an upper-case letter or underscore then the same, wherever it comes from:
+// Compile holds a hand-built Program and a Schema to it, as the lexer holds text.
+type Tuple []Const                                     // unchanged
+type Term, Atom, Comparison, Literal, Rule, Program    // unchanged
+func Parse(text string) (Program, error)               // unchanged
+
+// Schema names the base relations a base may hold and, per relation, an optional
+// check. The check runs on every body atom that names the relation at Compile (a
+// head never names a base relation), and on every fact of the relation at
+// NewBase/With (as an Atom of constants), so the schema's word holds everywhere a
+// tuple enters. Its error is wrapped, so errors.Is on the caller's sentinel works. A
+// Schema that carries checks is not a comparable value; keep every other field plain data.
+type Schema struct {
+    Arities map[string]int
+    Checks  map[string]func(Atom) error               // nil map or nil entry: no check
+}
+
+// Fact is one tuple of a base relation.
+type Fact struct {
+    Relation string
+    Tuple    Tuple
+}
+
+// NewBase holds facts under schema. A fact of a relation the schema lacks, or of the
+// wrong arity, is ErrInvalid. Every relation in schema.Arities exists, empty or not.
+func NewBase(schema Schema, facts ...Fact) (Base, error)
+
+// With is the standing base plus more facts, as a new value. Postcondition, and the
+// property a test holds over random fact sets: b.With(f...) is observationally equal
+// to NewBase(schema, standing..., f...) in Len, in every Evaluate, and in every
+// Answer hash. Implementation: relations the new facts do not touch are shared, not
+// copied; a relation they do touch is rebuilt. Same validation as NewBase.
+func (b Base) With(facts ...Fact) (Base, error)
+
+func (b Base) Len(relation string) int                 // unchanged
+
+func Compile(schema Schema, programs ...Program) (Plan, error)   // Definitions parameter gone
+
+type Options struct {
+    MaxBytes int   // over every derived tuple's JSON text; 0 is no bound; over it, *TooLarge
+    MaxSteps int   // join steps (tuples visited) over the whole evaluation; 0 is no bound; over it, *TooLarge
+    Proofs   bool  // record, for each derived tuple, the first derivation that produced it
+}
+// MaxBytes bounds what is derived; MaxSteps bounds the work to derive it. A rule that
+// joins a wide product and derives only duplicates is charged no bytes, so without
+// MaxSteps its termination would rest on the caller's deadline alone. *TooLarge
+// carries Bound, BoundBytes or BoundSteps, and its message starts "tarski:".
+// A base that holds a relation the plan derives is ErrInvalid at Evaluate, as is one
+// that lacks a relation the plan reads. Compatibility between a plan and a base is by
+// shape only, names and arities: a base built under a schema with different Checks
+// passes, because its facts were checked by its own schema at NewBase. A caller that
+// wants one set of checks everywhere compiles and builds from one Schema value, as
+// Shearline's policy.Load does.
+func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error)
+
+func (r Result) Relation(name string) (Answer, error)
+// Answer is a value with nothing to change: Relation(), Tuples() (a copy), Len(),
+// Bytes() (a copy of its one serialisation), Hash() ("sha256:" over Bytes). It
+// marshals as Bytes, so what is sent, stored and hashed is one thing; a zero Answer
+// marshals to an error. UnmarshalJSON reads back only an answer as written (a
+// relation name; tuples sorted, no repeats, one width) and seals it again.
+type Answer
+
+// Proof is how one tuple came to be. A base fact has Rule nil and no Body. A derived
+// tuple has the rule that first produced it and, in the rule's written order, the
+// positive body atoms' tuples, each with its own proof. Built-ins and comparisons and
+// negations contribute no body entry. The structure is finite and acyclic: a body
+// tuple was always derived strictly before its head. It is a DAG shared as values:
+// Result.Proof builds each (relation, tuple) proof once and reuses that value wherever
+// it appears in a body, so the size is linear in the derivation records.
+//
+// Proofs are deterministic: for one (plan, base, options) every evaluation yields the
+// same proof for every tuple; a base is its fact sequence, so Shearline's policy.Load sorts
+// standing facts and a proof is a function of the policy's content. Rule is a deep
+// copy the holder may keep or change; the plan is not reachable through a proof. It
+// carries Set ("name/version" of the rule set Compile took it from, "" for a bare
+// Program), Line, and Text (the rule as written), so a receipt can name its rule.
+type Proof struct {
+    Relation string
+    Tuple    Tuple
+    Rule     *Rule
+    Body     []Proof
+}
+// Proof is the proof of t in relation name; ok is false when t is not in the result or
+// the evaluation ran without Options.Proofs.
+func (r Result) Proof(name string, t Tuple) (p Proof, ok bool)
+
+// Absence is why a tuple was not derived: why-not provenance. For a goal not in the
+// result, every rule whose head unifies with it is walked, body in evaluation order,
+// against the result's relations; each rule reports the farthest literal that found no
+// match and the bindings it had there. A positive literal over a derived relation that
+// found nothing is explained recursively (depth-bounded, visited set, so recursion
+// through holds/2 terminates). A negation that held reports the proof of the tuple that
+// blocked it. A goal over a base relation with no rules is simply "no such fact".
+// Options.Proofs must be on. Deterministic for one (plan, base, goal). Engine-level: it
+// knows nothing of RBAC, and for rbac.dl it reads as "no role fact for P", "no grant for
+// A on a held role", "no permitted prefix matches R", or "denied by <proof>".
+type Absence struct {
+    Relation  string
+    Goal      []Term           // constants, or variables where the caller left a position open
+    Rules     []RuleFailure    // one per candidate rule; empty for a base relation
+    Truncated bool             // the walk hit whyNotSteps or maxDepth; what is here is still true
+}
+// "Farthest literal": a depth-first walk over the rule's ordered body, extending
+// bindings through every match of each literal (matches in relation order, rules in
+// plan order, so the answer is deterministic); the literal reported is the one with the
+// greatest index that any path reached and found no match, with that path's bindings.
+// A body that matches fully would have derived the goal, so it cannot occur against the
+// result it came from; it shows as a RuleFailure with a zero Failed. The walk is bounded
+// by whyNotSteps = 1 << 16 candidates tried (each matched literal branches) and by
+// maxDepth nested Because levels; Truncated is set where the cut fell and on every
+// Absence above it. A goal already explained in the same Absence is a cycle, not a cut:
+// it is left with an empty Because and does not set Truncated. A failed positive atom
+// over a base relation gets an Absence with nil Rules, "no such fact"; one over a derived
+// relation none of whose heads unify gets empty Rules, "no rule's head matches". Derived relations
+// are scanned, not indexed, since a shared Result's lazy index would race.
+type RuleFailure struct {
+    Rule    *Rule              // a copy, as in Proof
+    Bound   map[string]Const   // bindings when the walk stopped
+    Failed  Literal            // the farthest literal with no match (negation: one that held)
+    Because []Absence          // why Failed found nothing, when it is a derived positive atom
+    Blocked *Proof             // when Failed is a negation that held: the tuple that blocked
+}
+// WhyNot explains a tuple's absence. ok is false when t is in the result (ask Proof),
+// when name is not a relation of the plan or t is not its arity, or when the evaluation
+// ran without Options.Proofs. maxDepth bounds the recursion; 0 means the
+// engine's default (whyNotDepth = 8, enough for any policy rule set, small enough that a
+// pathological recursion stays cheap).
+func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool)
+
+// Both Proof and Absence render: String() is an indented derivation for a log or an
+// operator; MarshalJSON emits relation, tuple, rule as {set, line, text}, and body or
+// rules recursively, never the parser's AST. A proof writes each (relation, tuple)
+// once; a later occurrence is {relation, tuple, rule: null, shown: true}, as the text
+// says "(shown above)", so a document is linear in the derivation.
+func (p Proof) String() string;   func (p Proof) MarshalJSON() ([]byte, error)
+func (a Absence) String() string; func (a Absence) MarshalJSON() ([]byte, error)
+
+// RuleSet is a named, versioned program with a hash over its text.
+type RuleSet struct {
+    Name    string
+    Version int
+    Hash    string   // "sha256:<hex>" over Text
+    Program Program
+}
+// NewRuleSet parses text and hashes it, and names the program "name/version". The name
+// must be non-empty with no whitespace or control character, slash or semicolon (ID
+// is "name/version hash" and decisions join several); the version must not be
+// negative; the text must not be empty, since Verify would refuse it. Else ErrInvalid.
+func NewRuleSet(name string, version int, text string) (RuleSet, error)
+// ID is "name/version hash", the string a decision carries.
+func (s RuleSet) ID() string
+// Verify holds a RuleSet to its identity and its text: the name and version are
+// held to NewRuleSet's rule, the hash is recomputed over Program.Text, and the text
+// is parsed again and must equal Program, so the rules that run are the rules that
+// were hashed. A set built or edited by hand that fails any is ErrInvalid.
+// Shearline's policy.Load calls it, so the ID in a decision is the hash of the rules that ran.
+// Compile also deep-copies every program, so a caller's later edits reach no plan.
+func (s RuleSet) Verify() error
+
+// Arity reports a relation's arity in the plan, base or derived, and whether it exists.
+func (p Plan) Arity(name string) (int, bool)
+// Defines reports whether some rule has name as its head: a relation only declared
+// has an arity and no rule. Shearline's policy.Load requires both of allow/3 and permit/3.
+func (p Plan) Defines(name string) bool
+```
+
+### Built-ins
+
+Three reserved relations over strings, each a guard like a comparison: both arguments must be
+bound by a positive body atom (else `ErrInvalid` at compile), they bind nothing, they derive
+nothing, and they never appear in a head, a declaration, or a schema (else `ErrInvalid`).
+Argument order is pattern first, subject second. A non-string argument makes the guard false.
+
+| Atom | True when |
+|---|---|
+| `prefix(P, S)` | `strings.HasPrefix(S, P)` |
+| `suffix(P, S)` | `strings.HasSuffix(S, P)` |
+| `contains(P, S)` | `strings.Contains(S, P)` |
+
+Implementation: `builtins.go` holds `var builtins = map[string]builtin` keyed by name, with
+`type builtin struct{ arity int; eval func(args []Const) bool }`. `plan.go` consults it in
+`relations`/`checkAtom`/`checkRule`; `stratify.go`'s `order`/`ready` treats a built-in literal as a
+guard; `eval.go`'s `join` evaluates it where it evaluates a `Comparison`.
+
+### Evaluation invariants
+
+- **Concurrency.** A `Base`, a `Plan` and a `Result` are values: immutable once built and safe
+  to share across goroutines. A relation is either a value (`relation`: read methods only, no
+  `add`) or a builder (`relBuilder`: the place tuples are added, held only by the evaluator while
+  `Evaluate` runs). Base relations are sealed with an index per argument position; derived
+  relations are sealed without indexes when `Evaluate` returns and answer lookups by scanning.
+  Nothing a caller can hold has a write method, so the safety is structural (decision 6). Anam's
+  lazy-index mutation on shared relations would have raced under a concurrent `Policy`.
+- **Determinism.** `Evaluate` is a function of (plan, base, options): same inputs, same `Answer`
+  hashes and the same `Proof` for every tuple. Every walk over a map on the derivation path
+  (`merge` over the round's delta above all) iterates in sorted relation order, since insertion
+  order decides which derivation is first. A test evaluates twice and compares proofs deeply.
+- **Termination.** No function symbols, no built-in produces a value; evaluation reaches a
+  fixpoint. The deadline is checked every `stepsPerDeadlineCheck = 1024` join steps (unchanged).
+- **Declared and undefined is empty.** Anam's `checkDefined` is removed. A relation a program
+  declares and nothing defines evaluates as the empty relation, so a rule set can leave a hook
+  open; the bundled `rbac.dl` does not use it (its `deny/3` is defined from `denied/3`), a
+  consumer set may. Anam re-adds its `instant/1` check in its own layer if it wants it;
+  `Schema.Checks` is not the place (it sees one atom, not reachability).
+- **Bounds are approximate on bytes, exact on steps.** `MaxBytes` charges unescaped lengths, an
+  estimate of the JSON text; `MaxSteps` counts every candidate visited by a join or a negation
+  probe. Neither can be crossed with a nil error.
+
