@@ -4,6 +4,27 @@ Answer bytes, answer hashes, rule-set hashes and constants' canonical text are f
 (README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
 is listed here under its version.
 
+## Unreleased (v0.2.0)
+
+Aggregates (card 6), built on master. Tagged once Matt has settled the open questions in
+`docs/design/aggregates.md` § 11; until then any of the semantics below may change.
+
+- **Aggregates.** `N = count : { body }`, `S = sum X : { ... }`, `min`, `max`, in Soufflé's
+  syntax. Stratified like negation, exact sums, empty count and sum are 0, empty min and max
+  derive nothing, mixed kinds derive no tuple. `avg` and `mean` are refused. Witnesses are the
+  distinct solutions of the inner body with `_` fresh, which differs from Soufflé for
+  multi-literal bodies (design § 12.1).
+- **Additive API.** `Aggregate`, `Literal.Aggregate`, `Plan.HasAggregates`, `BoundNumber`,
+  `Proof.Group` and `Proof.GroupSize`, `RuleFailure.Value` and `RuleFailure.Reason`. The new JSON
+  fields are omitempty, so no v0.1 proof, answer or hash moves; `golden_test.go` is unchanged.
+- **`TooLarge` gained an unexported field.** An unkeyed `TooLarge{...}` literal in consumer code
+  no longer compiles (go vet already flags unkeyed literals).
+- **Bounds.** An aggregate's inner candidates are steps, and a sum's fold is priced by
+  `sumWork` and charged before it runs (two commit security reviews).
+- **Performance.** `NewBase` copies each relation into one backing array: 500k facts build in
+  20% less time and 38% less memory (card 7). A wide sum parses each addend once: 85 times
+  faster on 200 addends spanning 60,000 digits.
+
 ## v0.1.0 — 2026-10-25
 
 The engine cut from Shearline (`shearline/datalog` at c4f75ab) into its own module, with its

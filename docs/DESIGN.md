@@ -94,8 +94,11 @@ type Options struct {
 }
 // MaxBytes bounds what is derived; MaxSteps bounds the work to derive it. A rule that
 // joins a wide product and derives only duplicates is charged no bytes, so without
-// MaxSteps its termination would rest on the caller's deadline alone. *TooLarge
-// carries Bound, BoundBytes or BoundSteps, and its message starts "tarski:".
+// MaxSteps its termination would rest on the caller's deadline alone. MaxSteps also
+// charges an aggregate's inner candidates, one step per group computed, and a sum's
+// fold priced by sumWork before it runs (§ Aggregates). *TooLarge carries Bound:
+// BoundBytes, BoundSteps, or BoundNumber (a sum wider than maxSumDigits or whose text
+// would pass maxExponent), and its message starts "tarski:".
 // A base that holds a relation the plan derives is ErrInvalid at Evaluate, as is one
 // that lacks a relation the plan reads. Compatibility between a plan and a base is by
 // shape only, names and arities: a base built under a schema with different Checks
@@ -128,11 +131,17 @@ type Answer
 // carries Set ("name/version" of the rule set Compile took it from, "" for a bare
 // Program), Line, and Text (the rule as written), so a receipt can name its rule.
 type Proof struct {
-    Relation string
-    Tuple    Tuple
-    Rule     *Rule
-    Body     []Proof
+    Relation  string
+    Tuple     Tuple
+    Rule      *Rule
+    Body      []Proof
+    Group     [][]Proof  // v0.2: an aggregate's witnesses, each the inner body's tuples; first 64 kept
+    GroupSize int        // v0.2: how many witnesses the groups held, kept or not
 }
+// Group and GroupSize are zero for every tuple no aggregate derived, and both marshal
+// omitempty, so a proof without aggregates writes exactly the bytes it wrote in v0.1.
+// Witnesses are kept in witness order, a function of (plan, base), and only when
+// Options.Proofs is on; a cut Group still states the count in GroupSize.
 // Proof is the proof of t in relation name; ok is false when t is not in the result or
 // the evaluation ran without Options.Proofs.
 func (r Result) Proof(name string, t Tuple) (p Proof, ok bool)
@@ -172,7 +181,13 @@ type RuleFailure struct {
     Failed  Literal            // the farthest literal with no match (negation: one that held)
     Because []Absence          // why Failed found nothing, when it is a derived positive atom
     Blocked *Proof             // when Failed is a negation that held: the tuple that blocked
+    Value   *Const             // v0.2: when Failed is an aggregate, its value for the group
+    Reason  string             // v0.2: why the aggregate stopped the rule (empty min/max group,
+                               // mixed kinds, a non-number summed, a bound result that differs)
 }
+// Why-not evaluates an aggregate over the result's relations with the evaluation's own
+// function, charged to whyNotSteps (candidates, unindexed scans, groups and sumWork), so
+// an aggregate cannot make the walk unbounded. Value and Reason marshal omitempty.
 // WhyNot explains a tuple's absence. ok is false when t is in the result (ask Proof),
 // when name is not a relation of the plan or t is not its arity, or when the evaluation
 // ran without Options.Proofs. maxDepth bounds the recursion; 0 means the
@@ -215,7 +230,48 @@ func (p Plan) Arity(name string) (int, bool)
 // Defines reports whether some rule has name as its head: a relation only declared
 // has an arity and no rule. Shearline's policy.Load requires both of allow/3 and permit/3.
 func (p Plan) Defines(name string) bool
+// HasAggregates reports whether any rule of the plan uses an aggregate, so a consumer
+// that never wants them (Shearline's policy.Load) can refuse a rule set that does. v0.2.
+func (p Plan) HasAggregates() bool
+
+// Aggregate is the body literal `Result = Op Target : { Body }`, held in the additive
+// field Literal.Aggregate (nil on every other literal). v0.2.
+type Aggregate struct {
+    Op     string   // "count", "sum", "min" or "max"
+    Target Term     // the variable summed or compared; the zero Term for count
+    Result Term     // the variable the aggregate's value binds
+    Body   []Literal
+    Line   int
+}
 ```
+
+### Aggregates (v0.2)
+
+The full design, with the invariants stated first and the Soufflé comparison, is
+[`docs/design/aggregates.md`](design/aggregates.md). The contract in brief:
+
+- **Shape.** `N = count : { body }`, `S = sum X : { body }`, `M = min X : { body }`,
+  `M = max X : { body }` in a rule body. `avg` and `mean` are refused with a pointer to sum and
+  count. The operation words are not reserved: a relation may still be named `count`.
+- **Groups.** A variable of the braces that the rest of the rule also uses groups; it must be
+  bound by a positive atom outside the braces. Variables used only inside the braces belong to
+  the aggregate.
+- **Witnesses.** A group's input is the set of distinct solutions of the inner body, every `_` a
+  fresh variable. This matches Soufflé for single-atom bodies; for multi-literal bodies Soufflé
+  projects `_` away first (design §12.1), an open question for Matt.
+- **Values.** count and sum of an empty group are 0; min and max of one derive nothing. Sums are
+  exact (decimal, order-free). min and max compare one kind (numbers exactly, strings
+  lexically); a group that mixes kinds, or sums a non-number, derives no tuple and why-not says
+  which constant.
+- **Result already bound.** A Result bound before the aggregate is an equality test, as `X = 3` is.
+- **Stratification.** Every atom inside the braces is a negative edge: the aggregated relations
+  are complete before the aggregate is taken, and a cycle through an aggregate is refused at
+  Compile with a message saying where.
+- **Bounds.** Inner candidates are steps; a sum's fold is charged before it runs; a sum wider
+  than `maxSumDigits = 1 << 16` places, or whose text would pass `maxExponent`, is `*TooLarge`
+  with `BoundNumber`.
+- **Frozen bytes.** No v0.1 answer, rule-set hash, proof or constant text moves;
+  `golden_test.go` is unchanged and `aggregate_golden_test.go` pins the new shapes.
 
 ### Built-ins
 

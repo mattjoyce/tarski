@@ -16,8 +16,9 @@ knows no vocabulary: `role`, `entry` and `grants` are just strings to it.
 
 The language is small: rules, facts, stratified negation, comparisons, relation declarations, and
 three string built-ins (`prefix`, `suffix`, `contains`), beside which a consumer may declare its
-own guards. There are no function symbols and no arithmetic in rule heads, so every program
-terminates.
+own guards. On master, ahead of v0.2, there are also aggregates in Soufflé's syntax:
+`N = count : { ... }`, and `sum`, `min` and `max` over a variable, stratified like negation. There
+are no function symbols and no arithmetic in rule heads, so every program terminates.
 
 Status: pre-1.0. Cut on 2026-10-25 from [Shearline](https://github.com/mattjoyce/shearline),
 which had cut it from [Anam](https://github.com/mattjoyce/anam), with the history carried both
@@ -61,7 +62,8 @@ entry, and three consumers have to agree.
 - **Values, not places.** `Plan`, `Base` and `Result` are immutable once built and safe to share
   across goroutines, so any number of `Evaluate` calls may run on one plan and one base.
 - **Fail closed and bounded.** The context is checked on entry and during evaluation. Crossing
-  `MaxBytes` or `MaxSteps` returns `*TooLarge`, never a partial answer. No consumer input can
+  `MaxBytes` or `MaxSteps`, or summing past the exact-number bounds, returns `*TooLarge`, never a
+  partial answer. No consumer input can
   make the engine panic, and the fuzz suites in CI hold that.
 - **Receipts as data.** `Proof`, `Absence` and `RuleFailure` are exported structs. They render
   as indented text and marshal to compact JSON.
@@ -85,7 +87,8 @@ outputs" and the answer hash, and that is the consumer's fault, not the engine's
 Each step ships only when a consumer actually needs it.
 
 1. **Aggregates.** `count`, `sum`, `min` and `max` over a grouped body, stratified like negation
-   and charged to the bounds. Anam needs them first.
+   and charged to the bounds. Anam needs them first. Built on master; v0.2.0 is tagged once the
+   open questions in [`docs/design/aggregates.md`](docs/design/aggregates.md) § 11 are settled.
 2. **Demand-driven evaluation.** Given a goal, derive only the tuples that can reach it (magic
    sets). Answers do not change, so every existing test and hash still holds.
 3. **`under/3`**, a prefix match that respects segment separators, when a consumer's names need
