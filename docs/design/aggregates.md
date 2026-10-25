@@ -451,3 +451,20 @@ Each slice leaves the gate green and the golden test untouched.
 - **Q10, slice 2 inert landing.** Ship the syntax with Compile refusing, so Shearline's refusal
   can be adopted before evaluation exists? Recommend yes; it also lets Anam's oracle text be
   prepared against a parser that exists.
+
+## 12. Checked against Soufflé 2.5 (2026-10-25)
+
+The claims §7 marked as unchecked were run on Soufflé 2.5 (Homebrew) with a probe program over
+`r("a", 1). r("a", 2). r("a", 2).` and a group `"empty"` with no facts:
+
+| Case | Soufflé 2.5 | This design |
+|---|---|---|
+| `count : { r(G, _) }`, empty group | `0` | same |
+| `sum X : { r(G, X) }`, empty group | `0` | same |
+| `min X : { r(G, X) }`, empty group | no tuple | same |
+| a fact stated twice | counted once (set semantics) | same |
+| `count : { r(_, _) }` | `2`: each `_` fresh, distinct solutions | same |
+| `min` over a symbol column | refused by the type checker | allowed: an oracle delta, as §7 says |
+| `mean` / `avg` | `mean` exists; `avg` is a syntax error | `avg` and `mean` refused, deferred |
+
+The oracle script must skip rules that take min or max over strings.
