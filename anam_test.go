@@ -117,3 +117,50 @@ func TestAnamRuleSet_CompilesAndAnswers(t *testing.T) {
 		t.Errorf("WhyNot(regimen(r2, e3)) = %v, %v; want an explanation", why, ok)
 	}
 }
+
+// Anam's counting question (card 213): how many blood-pressure readings fell in June,
+// as one rule beside Anam's own rule set. The base adds June readings at its last
+// instant and mid-month, one at July's first instant that the half-open range leaves
+// out, and a June entry of another type, to anamBase's r1 (1 June) and r2 (20 July).
+func TestAnamRuleSet_CountsJuneReadings(t *testing.T) {
+	text, err := os.ReadFile("testdata/anam.dl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := tarski.NewRuleSet("anam", 2, string(text))
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	query, err := tarski.Parse(anamQuery + `
+in_june(N) :- N = count : { entry(_, "health.blood-pressure", At, _, _, _, _), At >= "2026-06-01T00:00:00.000000000Z", At < "2026-07-01T00:00:00.000000000Z" }.`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	plan, err := tarski.Compile(anamSchema, set.Program, query)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	reading := func(id, at string) tarski.Fact {
+		return fact("entry", id, "health.blood-pressure", at, "", "admitted", "test", 1)
+	}
+	base, err := anamBase(t).With(
+		reading("r3", "2026-06-30T23:59:59.999999999Z"),
+		reading("r4", "2026-06-15T08:30:00.000000000Z"),
+		reading("r5", "2026-07-01T00:00:00.000000000Z"),
+		fact("entry", "m1", "health.medication.started", "2026-06-10T00:00:00.000000000Z", "x", "admitted", "test", 1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	ans, err := res.Relation("in_june")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rows(ans); !same(got, []string{"3"}) {
+		t.Errorf("in_june = %v, want [3]: r1, r3 and r4", got)
+	}
+}

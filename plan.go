@@ -13,8 +13,9 @@ import (
 // used: an unknown relation, a wrong arity, an unsafe variable, a negation that
 // cannot be stratified, a rule over a base relation, a built-in where a relation
 // belongs, an atom its relation's check refuses, a builtin declaration the engine
-// cannot use, an aggregate (which this version parses but does not evaluate), or a
-// consumer builtin that panicked during evaluation. Each message says what to change.
+// cannot use, an aggregate that is unsafe or reads a relation that depends on its own
+// rule, or a consumer builtin that panicked during evaluation. Each message says what
+// to change.
 var ErrInvalid = errors.New("tarski: invalid program")
 
 // Plan is a validated, stratified program over a schema, ready to evaluate.
@@ -39,11 +40,14 @@ type Schema struct {
 
 // rule is a Rule with its body in evaluation order: positive atoms as written, each
 // followed by the negations and comparisons it binds, and with the positions of the
-// positive atoms whose relation the rule's own stratum derives.
+// positive atoms whose relation the rule's own stratum derives. aggs is indexed like
+// ordered and holds each aggregate literal's evaluation plan; it is nil for a rule with
+// no aggregate, which is every rule a v0.1 program has.
 type rule struct {
 	Rule
 	ordered   []Literal
 	recursive []int
+	aggs      []*aggPlan
 }
 
 // Compile validates programs against a schema and groups their rules into strata.
@@ -65,9 +69,6 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	}
 	programs = owned
 	if err := checkShape(programs); err != nil {
-		return Plan{}, err
-	}
-	if err := refuseAggregates(programs); err != nil {
 		return Plan{}, err
 	}
 	if err := checkSchema(schema); err != nil {
@@ -190,22 +191,23 @@ func relations(schema Schema, table builtinTable, programs []Program) (arities m
 
 // checkRule holds one rule to the arities, to the schema's checks, and to safety:
 // every variable in the head, in a negated atom, in a comparison or in a built-in is
-// bound by a positive body atom. A built-in binds nothing, so it never counts as one.
+// bound by a positive body atom or is an aggregate's result. A built-in binds nothing,
+// so it never counts as one. An aggregate's own body is held to the same rules inside
+// its braces (checkAggregate), and the atoms there to the arities and checks.
 func checkRule(r Rule, arities map[string]int, schema Schema, table builtinTable) error {
-	bound := map[string]bool{}
+	positive := map[string]bool{}
 	atoms := []*Atom{&r.Head}
 	for _, l := range r.Body {
+		if l.Aggregate != nil {
+			atoms = appendInnerAtoms(atoms, l.Aggregate)
+			continue
+		}
 		if l.Atom == nil {
 			continue
 		}
 		atoms = append(atoms, l.Atom)
-		if l.Negated || table.has(l.Atom.Name) {
-			continue
-		}
-		for _, a := range l.Atom.Args {
-			if a.IsVar() {
-				bound[a.Var] = true
-			}
+		if !l.Negated && !table.has(l.Atom.Name) {
+			bindVars(positive, l.Atom.Args)
 		}
 	}
 	for _, a := range atoms {
@@ -213,12 +215,13 @@ func checkRule(r Rule, arities map[string]int, schema Schema, table builtinTable
 			return fmt.Errorf("%w: line %d: %w", ErrInvalid, a.Line, err)
 		}
 	}
-	for _, a := range r.Head.Args {
-		if a.Var == "_" {
-			return fmt.Errorf("%w: line %d: _ in the head of %s; name the variable or use a constant", ErrInvalid, r.Line, r.Head.Name)
-		}
-		if a.IsVar() && !bound[a.Var] {
-			return fmt.Errorf("%w: line %d: %s in the head of %s is not bound by a positive body atom", ErrInvalid, r.Line, a.Var, r.Head.Name)
+	bound := withResults(positive, r.Body)
+	if err := checkHead(r, bound); err != nil {
+		return err
+	}
+	for i := range r.Body {
+		if err := checkAggregate(r, i, positive, table); err != nil {
+			return err
 		}
 	}
 	for _, l := range r.Body {

@@ -6,9 +6,8 @@ import (
 )
 
 // This file is the aggregate's surface: its AST, how the parser reads one, how it is
-// written back, and its structural check. Aggregates are not evaluated yet: Compile
-// refuses every one (refuseAggregates), so a program that holds one parses, renders and
-// clones, and no plan holds one. See docs/design/aggregates.md.
+// written back, and its structural check. Compile's checks are in aggregate_check.go
+// and evaluation in aggregate_eval.go. See docs/design/aggregates.md.
 
 // Aggregate is the body literal Result = Op Target : { Body }: count, sum, min or max
 // taken over the solutions of Body for each binding of the variables Body shares with
@@ -166,26 +165,8 @@ func checkAggregateShape(a Aggregate) error {
 	return nil
 }
 
-// refuseAggregates refuses any program holding an aggregate, which this version parses
-// but does not evaluate. It runs after checkShape, so a malformed aggregate is reported
-// as malformed and a well-formed one as not yet evaluated.
-func refuseAggregates(programs []Program) error {
-	for i, p := range programs {
-		for j, r := range p.Rules {
-			for _, l := range r.Body {
-				if l.Aggregate != nil {
-					return fmt.Errorf("%w: %s, rule %d (line %d): %s: aggregates are not evaluated yet (tarski v0.2 in progress)",
-						ErrInvalid, programName(p, i), j+1, r.Line, l.text())
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // HasAggregates reports whether any rule of the plan holds an aggregate. A consumer
-// whose rules must not aggregate refuses a plan for which it is true. Compile refuses
-// every aggregate until they are evaluated, so for now it is false for every plan.
+// whose rules must not aggregate refuses a plan for which it is true.
 func (p Plan) HasAggregates() bool {
 	for _, stratum := range p.strata {
 		for _, r := range stratum {

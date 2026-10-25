@@ -12,17 +12,38 @@ import (
 	"github.com/mattjoyce/tarski"
 )
 
-const inertMessage = "aggregates are not evaluated yet (tarski v0.2 in progress)"
+// schemaFor is a schema holding every relation p's bodies read and its heads do not
+// define, at the arity it is read at, so each parsed form compiles on its own.
+func schemaFor(p tarski.Program) tarski.Schema {
+	heads, arities := map[string]bool{}, map[string]int{}
+	builtins := tarski.EngineBuiltins()
+	var body func([]tarski.Literal)
+	body = func(ls []tarski.Literal) {
+		for _, l := range ls {
+			if l.Aggregate != nil {
+				body(l.Aggregate.Body)
+			}
+			if l.Atom == nil {
+				continue
+			}
+			if _, builtin := builtins[l.Atom.Name]; !builtin {
+				arities[l.Atom.Name] = len(l.Atom.Args)
+			}
+		}
+	}
+	for _, r := range p.Rules {
+		heads[r.Head.Name] = true
+		body(r.Body)
+	}
+	for name := range heads {
+		delete(arities, name)
+	}
+	return tarski.Schema{Arities: arities}
+}
 
-// aggregateSchema holds every base relation aggregateRules read.
-var aggregateSchema = tarski.Schema{Arities: map[string]int{
-	"month": 1, "reading": 1, "purchase": 3, "r": 3, "bad": 1, "s": 1,
-	"count": 1, "sum": 1, "min": 2, "max": 1,
-}}
-
-// The syntax lands inert: Compile refuses every aggregate, naming the rule set, the
-// line and the literal, so no plan holds one before evaluation exists.
-func TestCompile_RefusesEveryAggregate(t *testing.T) {
+// Every form the parser reads compiles once its relations exist, and the plan says it
+// aggregates; the rule set holding it verifies.
+func TestCompile_AcceptsEveryParsedAggregate(t *testing.T) {
 	t.Parallel()
 	for _, c := range aggregateRules {
 		t.Run(c.name, func(t *testing.T) {
@@ -34,19 +55,19 @@ func TestCompile_RefusesEveryAggregate(t *testing.T) {
 			if err := set.Verify(); err != nil {
 				t.Errorf("Verify: %v", err)
 			}
-			_, err = tarski.Compile(aggregateSchema, set.Program)
-			if !errors.Is(err, tarski.ErrInvalid) || !strings.Contains(err.Error(), inertMessage) {
-				t.Fatalf("Compile = %v, want ErrInvalid containing %q", err, inertMessage)
+			plan, err := tarski.Compile(schemaFor(set.Program), set.Program)
+			if err != nil {
+				t.Fatalf("Compile = %v, want a plan", err)
 			}
-			if !strings.Contains(err.Error(), "agg/1, rule 1 (line 1") || !strings.Contains(err.Error(), " = "+c.ops[0]) {
-				t.Errorf("Compile = %v, want it to name the set, the rule and the literal", err)
+			if !plan.HasAggregates() {
+				t.Error("HasAggregates = false for a plan holding an aggregate")
 			}
 		})
 	}
 }
 
 // An aggregate built by hand that the parser would not make is refused as malformed,
-// with a reason, before the inert refusal and never by a panic.
+// with a reason, before any safety check walks it, and never by a panic.
 func TestCompile_RefusesMalformedAggregates(t *testing.T) {
 	t.Parallel()
 	x, n := tarski.Term{Var: "X"}, tarski.Term{Var: "N"}
@@ -85,9 +106,6 @@ func TestCompile_RefusesMalformedAggregates(t *testing.T) {
 			if !errors.Is(err, tarski.ErrInvalid) || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("Compile = %v, want ErrInvalid containing %q", err, c.want)
 			}
-			if strings.Contains(err.Error(), inertMessage) {
-				t.Errorf("Compile = %v, want the shape refusal, not the inert one", err)
-			}
 		})
 	}
 }
@@ -114,11 +132,9 @@ func TestProgramClone_DeepCopiesAggregates(t *testing.T) {
 	}
 }
 
-// Before evaluation exists Compile refuses every aggregate, so HasAggregates is false
-// for every plan Compile makes; the programs below are the existing kinds (recursion,
-// negation, comparisons, builtins, Anam's rule set). Slice 3 of card 6 makes Compile
-// accept aggregates, and its tests compile an aggregate rule and assert true here; until
-// then aggregate_internal_test.go reaches the true branch with a hand-assembled plan.
+// HasAggregates is false for every plan of the kinds a v0.1 program makes (recursion,
+// negation, comparisons, builtins, Anam's rule set); TestCompile_AcceptsEveryParsedAggregate
+// holds it true for every compiled aggregate form.
 func TestPlan_HasAggregatesIsFalseForExistingPrograms(t *testing.T) {
 	t.Parallel()
 	anam, err := os.ReadFile("testdata/anam.dl")

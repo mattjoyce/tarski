@@ -102,21 +102,37 @@ func (u unifier) union(a, b string) bool {
 	return true
 }
 
-// renamed is body with every variable alias maps replaced by its canonical name.
+// renamed is body with every variable alias maps replaced by its canonical name, inside
+// an aggregate's braces and its result and target too. alias renames head variables
+// only, and a head variable inside the braces is a group variable, the same variable
+// as outside, so renaming it there keeps the group what the goal fixes.
 func renamed(body []Literal, alias map[string]string) []Literal {
 	out := make([]Literal, len(body))
 	for i, l := range body {
 		out[i] = copyLiteral(l)
-		if out[i].Atom != nil {
-			renameTerms(out[i].Atom.Args, alias)
-		}
-		if out[i].Compare != nil {
-			pair := []Term{out[i].Compare.Left, out[i].Compare.Right}
-			renameTerms(pair, alias)
-			out[i].Compare.Left, out[i].Compare.Right = pair[0], pair[1]
-		}
+		renameLiteral(&out[i], alias)
 	}
 	return out
+}
+
+// renameLiteral renames, in place, the variables of a literal that shares nothing.
+func renameLiteral(l *Literal, alias map[string]string) {
+	if l.Atom != nil {
+		renameTerms(l.Atom.Args, alias)
+	}
+	if l.Compare != nil {
+		pair := []Term{l.Compare.Left, l.Compare.Right}
+		renameTerms(pair, alias)
+		l.Compare.Left, l.Compare.Right = pair[0], pair[1]
+	}
+	if a := l.Aggregate; a != nil {
+		pair := []Term{a.Result, a.Target}
+		renameTerms(pair, alias)
+		a.Result, a.Target = pair[0], pair[1]
+		for j := range a.Body {
+			renameLiteral(&a.Body[j], alias)
+		}
+	}
 }
 
 func renameTerms(ts []Term, alias map[string]string) {

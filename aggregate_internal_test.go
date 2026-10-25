@@ -42,21 +42,76 @@ func mustAggregate(t *testing.T, src string) Literal {
 	return lit
 }
 
-// HasAggregates is true when a plan's rule holds an aggregate. Compile cannot make such
-// a plan yet (it refuses every aggregate), so the plan is assembled by hand; slice 3 of
-// card 6 replaces this with a compiled one.
-func TestHasAggregates_TrueForAPlanHoldingOne(t *testing.T) {
+// renamed reaches inside an aggregate: its result, its target and its body take the
+// canonical names, and the original body is untouched.
+func TestRenamed_RenamesInsideAnAggregate(t *testing.T) {
 	t.Parallel()
-	p, err := Parse(`n(N) :- s(X), N = count : { s(X) }. m(X) :- s(X).`)
+	body := mustParse(t, `h(B, C) :- g(B), C = sum B : { item(B, V), V > B, not bad(B) }.`).Rules[0].Body
+	before := body[1].text()
+	got := renamed(body, map[string]string{"B": "A", "C": "A"})
+	if want := "A = sum A : { item(A, V), V > A, not bad(A) }"; got[1].text() != want || got[0].text() != "g(A)" {
+		t.Errorf("renamed = %s, %s; want g(A), %s", got[0].text(), got[1].text(), want)
+	}
+	if body[1].text() != before {
+		t.Errorf("renamed changed the original: %s", body[1].text())
+	}
+}
+
+// HasAggregates is true exactly when a compiled plan's rule holds an aggregate.
+func TestHasAggregates_CompiledPlans(t *testing.T) {
+	t.Parallel()
+	schema := Schema{Arities: map[string]int{"s": 1}}
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{`m(X) :- s(X).`, false},
+		{`n(N) :- s(X), N = count : { s(X) }. m(X) :- s(X).`, true},
+		{`m(X) :- s(X). n(N) :- N = count : { m(_) }.`, true},
+	}
+	for _, c := range cases {
+		plan, err := Compile(schema, mustParse(t, c.text))
+		if err != nil {
+			t.Fatalf("Compile(%s): %v", c.text, err)
+		}
+		if got := plan.HasAggregates(); got != c.want {
+			t.Errorf("HasAggregates(%s) = %v, want %v", c.text, got, c.want)
+		}
+	}
+}
+
+// An aggregate is placed as soon as its group variables are bound, the guards on its
+// result follow it, and its body is ordered on its own with the group variables bound,
+// so a guard inside runs right after the atom that binds it.
+func TestOrder_PlacesAnAggregateLikeAGuardThatBinds(t *testing.T) {
+	t.Parallel()
+	schema := Schema{Arities: map[string]int{"grp": 1, "item": 2}}
+	text := `n(G, N) :- N > 1, N = count : { V > 1, item(G, V) }, grp(G), N != 7.`
+	plan, err := Compile(schema, mustParse(t, text))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain := Plan{strata: [][]rule{{{Rule: p.Rules[1]}}}}
-	if plain.HasAggregates() {
-		t.Error("HasAggregates = true for a plan with no aggregate")
+	r := plan.strata[0][0]
+	var got []string
+	for _, l := range r.ordered {
+		got = append(got, l.text())
 	}
-	with := Plan{strata: [][]rule{{{Rule: p.Rules[1]}}, {{Rule: p.Rules[0]}}}}
-	if !with.HasAggregates() {
-		t.Error("HasAggregates = false for a plan holding an aggregate")
+	want := []string{"grp(G)", "N = count : { V > 1, item(G, V) }", "N > 1", "N != 7"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ordered = %q, want %q", got, want)
+	}
+	a := r.aggs[1]
+	if a == nil || !reflect.DeepEqual(a.group, []string{"G"}) {
+		t.Fatalf("aggs[1] = %+v, want the count grouped by G", a)
+	}
+	var inner []string
+	for _, l := range a.inner.ordered {
+		inner = append(inner, l.text())
+	}
+	if want := []string{"item(G, V)", "V > 1"}; !reflect.DeepEqual(inner, want) {
+		t.Errorf("inner ordered = %q, want %q", inner, want)
+	}
+	if r.aggs[0] != nil || len(r.recursive) != 0 {
+		t.Errorf("aggs = %v, recursive = %v; want only position 1 to aggregate and none recursive", r.aggs, r.recursive)
 	}
 }

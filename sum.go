@@ -110,3 +110,35 @@ func sumConsts(cs []Const) (Const, error) {
 	}
 	return Const{kind: KindNumber, s: n.text(), num: n}, nil
 }
+
+// sumDigitsPerStep is how many digits of alignment one step pays for when a group's
+// sum is folded. A join step is a map lookup and a slice append; aligning and adding
+// 64 digits in a big.Int is the same order of work. An invariant, not a knob: it is
+// what keeps MaxSteps a bound on the work a sum does as well as on the join.
+const sumDigitsPerStep = 64
+
+// sumWork is the steps folding cs costs. Every non-zero addend is aligned to the
+// group's whole width (sumNumbers), so the work is addends times width, charged in
+// steps of sumDigitsPerStep digits. A group of fewer than two non-zero numbers, or
+// one wider than maxSumDigits, costs nothing here: sumNumbers returns the one number,
+// or refuses before it aligns anything.
+func sumWork(cs []Const) int {
+	var low, high, nonZero int
+	for _, c := range cs {
+		n := c.num
+		if c.kind != KindNumber || n.digits == "0" {
+			continue
+		}
+		place := len(n.digits) + n.exp
+		if nonZero == 0 {
+			low, high = n.exp, place
+		}
+		low, high = min(low, n.exp), max(high, place)
+		nonZero++
+	}
+	width := high - low
+	if nonZero < 2 || width > maxSumDigits {
+		return 0
+	}
+	return nonZero * (width/sumDigitsPerStep + 1)
+}

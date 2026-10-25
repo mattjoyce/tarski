@@ -19,10 +19,11 @@ type walker struct {
 	// head variables the goal equates renamed to one, so the walk honours the equality.
 	body []Literal
 	// alias maps each renamed variable to the one it was renamed to.
-	alias map[string]string
-	best  miss
-	found bool // some literal found no match
-	full  bool // the body matched in full
+	alias  map[string]string
+	best   miss
+	found  bool // some literal found no match
+	full   bool // the body matched in full
+	opaque bool // the walk reached an aggregate literal, which it does not explain yet
 }
 
 // bound is env as the rule's own variables: a variable renamed for the walk is shown
@@ -40,7 +41,7 @@ func (w *walker) bound(env map[string]Const) map[string]Const {
 // walk extends env through the body from literal i on. It returns false to stop the
 // whole walk (a full match, or the step limit).
 func (w *walker) walk(i int, env map[string]Const) bool {
-	if w.x.exhausted || w.full {
+	if w.x.exhausted || w.full || w.opaque {
 		return false
 	}
 	if i == len(w.body) {
@@ -49,6 +50,11 @@ func (w *walker) walk(i int, env map[string]Const) bool {
 	}
 	l := w.body[i]
 	switch {
+	case l.Aggregate != nil:
+		// The walk does not compute an aggregate yet (card 6, slice 4), so it cannot say
+		// whether this literal held: it stops, and the rule is reported unexplained.
+		w.opaque = true
+		return false
 	case l.Compare != nil || w.x.r.plan.builtins.has(l.Atom.Name):
 		ok, err := w.x.r.plan.builtins.guardHolds(l, env)
 		if err != nil {
