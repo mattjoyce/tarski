@@ -11,6 +11,7 @@ import (
 type Result struct {
 	relations map[string]*relation
 	proofs    map[string]map[string]*derivation // nil unless Options.Proofs
+	groups    map[string]groupRecord            // nil unless Options.Proofs and an aggregate derived a tuple
 	plan      Plan                              // what WhyNot reads the rules and arities from
 }
 
@@ -69,7 +70,7 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if err := ev.deadline(); err != nil {
 		return Result{}, err
 	}
-	return Result{relations: ev.sealed(plan), proofs: ev.proofs, plan: plan}, nil
+	return Result{relations: ev.sealed(plan), proofs: ev.proofs, groups: ev.groups, plan: plan}, nil
 }
 
 // sealed is the evaluation's relations as values: the base's own, and each derived
@@ -96,6 +97,11 @@ type evaluator struct {
 	// stay nil when Proofs is off, so the join pays one nil check and nothing else.
 	proofs map[string]map[string]*derivation
 	stack  []bodyTuple
+	// aggPath is the aggregate groups on the join's current path, and groups the group
+	// each aggregate-derived tuple was first taken over, by proofKey (aggregate_eval.go).
+	// Both stay nil for a plan with no aggregate, so a derivation record is no larger.
+	aggPath []usedGroup
+	groups  map[string]groupRecord
 
 	opts          Options
 	builtins      builtinTable // the plan's, read only
@@ -103,8 +109,19 @@ type evaluator struct {
 	over          *TooLarge
 
 	// aggMemo is each aggregate's value per group, computed once in the evaluation
-	// (aggregate_eval.go). It stays nil for a plan with no aggregate.
-	aggMemo map[aggKey]aggValue
+	// (aggregate_eval.go). It stays nil for a plan with no aggregate. witnesses is,
+	// beside it and only when proofs are recorded, each group's first maxProofGroup
+	// witnesses in witness order, each the inner body's positive tuples in written
+	// order. Witness order is the inner join's, relation order over complete
+	// relations, so it is a function of (plan, base).
+	aggMemo   map[aggKey]aggValue
+	witnesses map[aggKey][][]bodyTuple
+
+	// chargeScans is set only for the evaluator a why-not walk uses to compute an
+	// aggregate (whynot_aggregate.go): there a relation scanned to find candidates is
+	// charged in full, as the walk charges it (scanCost), so the walk's budget bounds
+	// the work and not only the matches. Evaluate never sets it.
+	chargeScans bool
 }
 
 // stratum evaluates one stratum's rules to a fixpoint.
@@ -192,7 +209,7 @@ func (ev *evaluator) apply(r *rule, delta *relBuilder, deltaPos int, out map[str
 }
 
 // derivation is one way a tuple came to be: the rule, and the positive body tuples
-// in the order written.
+// in the order written. The group an aggregate took it over is kept apart, in groups.
 type derivation struct {
 	rule *Rule
 	body []bodyTuple
@@ -218,6 +235,12 @@ func (ev *evaluator) record(r *rule, t Tuple) {
 		d.body = append([]bodyTuple(nil), ev.stack...)
 	}
 	by[t.key()] = d
+	if len(ev.aggPath) > 0 {
+		if ev.groups == nil {
+			ev.groups = map[string]groupRecord{}
+		}
+		ev.groups[proofKey(r.Head.Name, t)] = ev.groupOf(r)
+	}
 }
 
 // count charges one derived tuple against the byte bound. The charge approximates the

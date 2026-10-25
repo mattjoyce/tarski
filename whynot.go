@@ -36,9 +36,8 @@ type Absence struct {
 	// matches"): the two render apart, since a missing fact and a rule set with no
 	// rule for the case are different things to fix.
 	Rules []RuleFailure
-	// Truncated is set when the walk hit the depth or the step limit, or reached an
-	// aggregate literal, which the walk does not explain yet. What is here is still
-	// true; there is more it did not look at.
+	// Truncated is set when the walk hit the depth or the step limit. What is here is
+	// still true; there is more it did not look at.
 	Truncated bool
 }
 
@@ -50,11 +49,12 @@ type RuleFailure struct {
 	// reached the failing literal.
 	Bound map[string]Const
 	// Failed is the farthest literal in evaluation order with no match; for a negation
-	// it is the one that held, since that is what stopped the rule. A zero Literal (no
-	// Atom, no Compare) means the walk found no failing literal: the body matched in
-	// full, which cannot happen against the result the rule ran over, or the step limit
-	// ended the walk first, or the walk reached an aggregate literal, which this version
-	// does not explain (Absence.Truncated is set for both).
+	// it is the one that held, since that is what stopped the rule, and for an
+	// aggregate it is one whose group gave no value or a value other than the one
+	// bound. A zero Literal (no Atom, no Compare, no Aggregate) means the walk found no
+	// failing literal: the body matched in full, which cannot happen against the
+	// result the rule ran over, or the step limit ended the walk first
+	// (Absence.Truncated is set).
 	Failed Literal
 	// Because explains why Failed found nothing, when it is a positive atom: over a
 	// derived relation, the rules that did not derive it; over a base relation, an
@@ -65,6 +65,13 @@ type RuleFailure struct {
 	// Blocked is the proof of the tuple that blocked Failed, when Failed is a negation
 	// that held.
 	Blocked *Proof
+	// Value is the aggregate's value for the group, when Failed is an aggregate whose
+	// group had one that differed from the result already bound; nil otherwise.
+	Value *Const
+	// Reason says why Failed, an aggregate, stopped the rule: its value against the
+	// one bound, an empty group under min or max, a group mixing kinds or summing a
+	// non-number (naming the constant). Empty unless Failed is an aggregate.
+	Reason string
 }
 
 // WhyNot explains a tuple's absence. ok is false when t is in the result (ask Proof),
@@ -102,7 +109,8 @@ type explainer struct {
 	seen      map[string]bool
 	steps     int
 	exhausted bool
-	failed    error // a builtin panicked; the walk stops and WhyNot explains nothing
+	failed    error      // a builtin panicked; the walk stops and WhyNot explains nothing
+	agg       *evaluator // computes aggregates over the result; made when first needed
 }
 
 // spend charges one candidate against the step limit and reports whether it is gone.
@@ -180,15 +188,11 @@ func (x *explainer) failure(ru *rule, goal []Term, depth int) (rf RuleFailure, c
 	}
 	w.walk(0, env)
 	rf = RuleFailure{Rule: x.b.rule(&ru.Rule), Bound: w.bound(env)}
-	if w.opaque {
-		// A failure found before the aggregate may not be the farthest one, so none is
-		// claimed: the rule is reported with no failing literal, cut short.
-		return rf, true, true
-	}
 	if !w.found {
 		return rf, false, true
 	}
 	rf.Bound, rf.Failed = w.bound(w.best.env), copyLiteral(ru.ordered[w.best.idx])
+	rf.Value, rf.Reason = w.best.value, w.best.reason
 	switch {
 	case w.best.blocked != nil:
 		p := x.b.build(w.best.lit.Atom.Name, w.best.blocked)

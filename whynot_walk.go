@@ -2,13 +2,16 @@ package tarski
 
 import "maps"
 
-// miss is the farthest failure a walk has seen: where, with what bindings, and for a
-// negation that held, the tuple that held it.
+// miss is the farthest failure a walk has seen: where, with what bindings, for a
+// negation that held, the tuple that held it, and for an aggregate, its value and why
+// it stopped the rule.
 type miss struct {
 	idx     int
 	env     map[string]Const
 	lit     Literal
 	blocked Tuple
+	value   *Const
+	reason  string
 }
 
 // walker is a depth-first walk over one rule's ordered body.
@@ -19,11 +22,10 @@ type walker struct {
 	// head variables the goal equates renamed to one, so the walk honours the equality.
 	body []Literal
 	// alias maps each renamed variable to the one it was renamed to.
-	alias  map[string]string
-	best   miss
-	found  bool // some literal found no match
-	full   bool // the body matched in full
-	opaque bool // the walk reached an aggregate literal, which it does not explain yet
+	alias map[string]string
+	best  miss
+	found bool // some literal found no match
+	full  bool // the body matched in full
 }
 
 // bound is env as the rule's own variables: a variable renamed for the walk is shown
@@ -41,7 +43,7 @@ func (w *walker) bound(env map[string]Const) map[string]Const {
 // walk extends env through the body from literal i on. It returns false to stop the
 // whole walk (a full match, or the step limit).
 func (w *walker) walk(i int, env map[string]Const) bool {
-	if w.x.exhausted || w.full || w.opaque {
+	if w.x.exhausted || w.full {
 		return false
 	}
 	if i == len(w.body) {
@@ -51,10 +53,7 @@ func (w *walker) walk(i int, env map[string]Const) bool {
 	l := w.body[i]
 	switch {
 	case l.Aggregate != nil:
-		// The walk does not compute an aggregate yet (card 6, slice 4), so it cannot say
-		// whether this literal held: it stops, and the rule is reported unexplained.
-		w.opaque = true
-		return false
+		return w.aggregate(i, l, env)
 	case l.Compare != nil || w.x.r.plan.builtins.has(l.Atom.Name):
 		ok, err := w.x.r.plan.builtins.guardHolds(l, env)
 		if err != nil {
@@ -134,9 +133,14 @@ func (w *walker) probe(rel *relation, args []Term, env map[string]Const) (t Tupl
 // record keeps a failure if it is farther than any before it. The first path to reach
 // an index keeps it.
 func (w *walker) record(i int, env map[string]Const, l Literal, blocked Tuple) {
-	if w.found && i <= w.best.idx {
+	w.keep(miss{idx: i, env: env, lit: l, blocked: blocked})
+}
+
+// keep is record for a miss already made; its env is cloned if it is kept.
+func (w *walker) keep(m miss) {
+	if w.found && m.idx <= w.best.idx {
 		return
 	}
-	w.found = true
-	w.best = miss{idx: i, env: maps.Clone(env), lit: l, blocked: blocked}
+	m.env = maps.Clone(m.env)
+	w.found, w.best = true, m
 }

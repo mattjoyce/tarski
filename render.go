@@ -153,6 +153,34 @@ func (p Proof) write(b *strings.Builder, depth int, shown map[string]bool) {
 	for _, sub := range p.Body {
 		sub.write(b, depth+1, shown)
 	}
+	if len(p.Group) == 0 && p.GroupSize == 0 && !hasAggregate(p.Rule) {
+		return
+	}
+	b.WriteString(strings.Repeat("  ", depth+1))
+	fmt.Fprintf(b, "group of %d", p.GroupSize)
+	if len(p.Group) < p.GroupSize {
+		fmt.Fprintf(b, " (%d shown)", len(p.Group))
+	}
+	b.WriteString("\n")
+	for _, w := range p.Group {
+		for _, sub := range w {
+			sub.write(b, depth+2, shown)
+		}
+	}
+}
+
+// hasAggregate reports whether a rule has an aggregate literal, so that a proof of a
+// tuple taken over an empty group still says "group of 0".
+func hasAggregate(r *Rule) bool {
+	if r == nil {
+		return false
+	}
+	for _, l := range r.Body {
+		if l.Aggregate != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // String is the absence as an indented explanation: the goal, then for each rule that
@@ -190,7 +218,7 @@ func (a Absence) write(b *strings.Builder, depth int) {
 	}
 	for _, rf := range a.Rules {
 		fmt.Fprintf(b, "%s  %s\n", pad, ruleLine(rf.Rule))
-		fmt.Fprintf(b, "%s    stopped at %s%s\n", pad, rf.Failed.text(), boundText(rf.Bound))
+		fmt.Fprintf(b, "%s    stopped at %s%s%s\n", pad, rf.Failed.text(), boundText(rf.Bound), reasonText(rf.Reason))
 		if rf.Blocked != nil {
 			fmt.Fprintf(b, "%s    blocked by\n", pad)
 			for _, line := range strings.Split(strings.TrimRight(rf.Blocked.String(), "\n"), "\n") {
@@ -202,6 +230,14 @@ func (a Absence) write(b *strings.Builder, depth int) {
 			sub.write(b, depth+3)
 		}
 	}
+}
+
+// reasonText is ": reason" for an aggregate literal that stopped a rule, or nothing.
+func reasonText(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return ": " + reason
 }
 
 // boundText is " with A=1, B="x"", variables in name order, or nothing.
@@ -239,7 +275,11 @@ type jsonProof struct {
 	Tuple    []Const     `json:"tuple"`
 	Rule     *jsonRule   `json:"rule"`
 	Body     []jsonProof `json:"body,omitempty"`
-	Shown    bool        `json:"shown,omitempty"`
+	// Group and GroupSize are written only for a tuple an aggregate derived, so the
+	// document of every other proof is the bytes it was before aggregates.
+	Group     [][]jsonProof `json:"group,omitempty"`
+	GroupSize int           `json:"group_size,omitempty"`
+	Shown     bool          `json:"shown,omitempty"`
 }
 
 // json writes the proof once per (relation, tuple): a sub-proof already in the
@@ -258,11 +298,21 @@ func (p Proof) json(shown map[string]bool) jsonProof {
 	for _, sub := range p.Body {
 		out.Body = append(out.Body, sub.json(shown))
 	}
+	for _, w := range p.Group {
+		jw := make([]jsonProof, len(w))
+		for i, sub := range w {
+			jw[i] = sub.json(shown)
+		}
+		out.Group = append(out.Group, jw)
+	}
+	out.GroupSize = p.GroupSize
 	return out
 }
 
 // MarshalJSON writes the proof as {relation, tuple, rule: {set, line, text} or null,
-// body: [...]}, the body omitted for a base fact. A tuple proved earlier in the same
+// body: [...]}, the body omitted for a base fact. A tuple an aggregate derived also has
+// group: [[...], ...], one array of proofs per kept witness, and group_size, the whole
+// group's size; both are omitted for every other tuple and for an empty group. A tuple proved earlier in the same
 // document is not written out again: it is {relation, tuple, rule: null, shown: true},
 // and its proof is the first one in the document with that relation and tuple, so the
 // document is linear in the derivation however much of it is shared.
@@ -274,6 +324,8 @@ type jsonFailure struct {
 	Failed  string           `json:"failed"`
 	Because []jsonAbsence    `json:"because,omitempty"`
 	Blocked *jsonProof       `json:"blocked,omitempty"`
+	Value   *Const           `json:"value,omitempty"`
+	Reason  string           `json:"reason,omitempty"`
 }
 
 type jsonAbsence struct {
@@ -296,7 +348,7 @@ func (a Absence) json(depth int) jsonAbsence {
 		}
 	}
 	for _, rf := range a.Rules {
-		f := jsonFailure{Rule: ruleJSON(rf.Rule), Bound: rf.Bound, Failed: rf.Failed.text()}
+		f := jsonFailure{Rule: ruleJSON(rf.Rule), Bound: rf.Bound, Failed: rf.Failed.text(), Value: rf.Value, Reason: rf.Reason}
 		if f.Bound == nil {
 			f.Bound = map[string]Const{}
 		}
@@ -313,7 +365,8 @@ func (a Absence) json(depth int) jsonAbsence {
 }
 
 // MarshalJSON writes the absence as {relation, goal, truncated, rules: [{rule, bound,
-// failed, because, blocked}]}. A goal position the caller left open is null, a failed
-// literal is its source text, and because and blocked appear only when there is one.
+// failed, because, blocked, value, reason}]}. A goal position the caller left open is
+// null, a failed literal is its source text, and because, blocked, value and reason
+// appear only when there is one (value and reason only for an aggregate literal).
 // A blocked proof is written as Proof.MarshalJSON writes one.
 func (a Absence) MarshalJSON() ([]byte, error) { return json.Marshal(a.json(0)) }

@@ -2,7 +2,6 @@ package tarski_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -172,51 +171,6 @@ func mapsEqual(a, b map[string]string) bool {
 		}
 	}
 	return true
-}
-
-// Until proofs carry the group (card 6 slice 4), the proof of an aggregate-derived tuple
-// is its rule and its positive atoms outside the braces, and a why-not that reaches an
-// aggregate literal claims no failing literal: it says it was cut short. Neither
-// panics, and both render.
-func TestProofAndWhyNot_ThroughAnAggregate(t *testing.T) {
-	t.Parallel()
-	text := `n(G, N) :- grp(G), N = count : { item(G, _) }.
-pair(G) :- grp(G), n(X, X).
-busy(G) :- grp(G), n(G, 5).`
-	res, err := aggEval(t, aggSchema, aggFacts(), text, tarski.Options{Proofs: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, ok := res.Proof("n", tarski.Tuple{tarski.String("a"), tarski.Int(3)})
-	if !ok || p.Rule == nil || len(p.Body) != 1 || p.Body[0].Relation != "grp" {
-		t.Fatalf("Proof(n(a, 3)) = %+v, %v; want the rule with grp(a) as its body", p, ok)
-	}
-	if _, err := json.Marshal(p); err != nil || p.String() == "" {
-		t.Errorf("proof renders: %v", err)
-	}
-	goals := []struct {
-		relation string
-		tuple    tarski.Tuple
-	}{
-		{"n", tarski.Tuple{tarski.String("a"), tarski.Int(4)}},
-		{"pair", tarski.Tuple{tarski.String("a")}},
-		{"busy", tarski.Tuple{tarski.String("a")}},
-	}
-	for _, g := range goals {
-		a, ok := res.WhyNot(g.relation, g.tuple, 0)
-		if !ok || !a.Truncated || len(a.Rules) != 1 {
-			t.Fatalf("WhyNot(%s%v) = %+v, %v; want one rule, truncated", g.relation, g.tuple, a, ok)
-		}
-		if _, err := json.Marshal(a); err != nil || a.String() == "" {
-			t.Errorf("WhyNot(%s) renders: %v", g.relation, err)
-		}
-		if g.relation != "n" {
-			continue
-		}
-		if f := a.Rules[0].Failed; f.Atom != nil || f.Compare != nil || f.Aggregate != nil {
-			t.Errorf("WhyNot(n) claims the failing literal %+v; want none", f)
-		}
-	}
 }
 
 // TestAggregate_SumWorkCharged: folding a sum aligns every addend to the group's

@@ -8,11 +8,13 @@ import "slices"
 // negations contribute no body entry. The tree is finite and acyclic: a body tuple was
 // always derived strictly before its head.
 //
-// An aggregate contributes no body entry yet either: the proof of a tuple a rule with an
-// aggregate derived holds the rule and its positive atoms outside the braces, and not
-// the group the aggregate was taken over. The group is planned as an additive field
-// (docs/design/aggregates.md §5, card 6 slice 4); until it lands, read the aggregate's
-// inputs from the rule text and the result.
+// An aggregate contributes no body entry either. Its group is in Group: one entry per
+// witness, each the positive atoms inside the braces with their proofs, in written
+// order. Witnesses are kept in witness order (relation order, a function of the plan
+// and the base) up to 64; GroupSize is the whole group's size, so a cut Group still
+// states the count. With several aggregates in a rule their witnesses are
+// concatenated in the rule's written order and GroupSize is the sum. Both fields are
+// zero for every tuple no aggregate derived, and for an aggregate over an empty group.
 //
 // It is a DAG shared as values: a tuple that appears in several bodies has one Proof
 // value, so the size is linear in the derivation records, not in the unfolded tree.
@@ -23,6 +25,10 @@ type Proof struct {
 	Tuple    Tuple
 	Rule     *Rule
 	Body     []Proof
+	// Group is the kept witnesses of the aggregate groups the tuple was taken over.
+	Group [][]Proof
+	// GroupSize is the number of witnesses in those groups, kept or not.
+	GroupSize int
 }
 
 // Proof is the proof of t in relation name; ok is false when t is not in the result or
@@ -49,7 +55,7 @@ type builder struct {
 // build makes the proof of a tuple known to be in the result. A tuple with no
 // derivation record is a base fact, since every derived tuple has one.
 func (b *builder) build(name string, t Tuple) Proof {
-	k := name + "\x00" + t.key() // unambiguous: a name holds no NUL (isName), a key is self-delimiting
+	k := proofKey(name, t)
 	if p, done := b.proofs[k]; done {
 		return p
 	}
@@ -62,9 +68,29 @@ func (b *builder) build(name string, t Tuple) Proof {
 				p.Body[i] = b.build(bt.relation, bt.tuple)
 			}
 		}
+		if g, ok := b.r.groups[k]; ok {
+			p.Group, p.GroupSize = b.group(g.witnesses), g.size
+		}
 	}
 	b.proofs[k] = p
 	return p
+}
+
+// group builds each kept witness's tuples through the same memo as the body, so a
+// tuple shared by witnesses, or by a witness and the body, is one value. Witnesses are
+// tuples of strictly lower strata, so the DAG stays acyclic.
+func (b *builder) group(ws [][]bodyTuple) [][]Proof {
+	if len(ws) == 0 {
+		return nil
+	}
+	out := make([][]Proof, len(ws))
+	for i, w := range ws {
+		out[i] = make([]Proof, len(w))
+		for j, bt := range w {
+			out[i][j] = b.build(bt.relation, bt.tuple)
+		}
+	}
+	return out
 }
 
 // rule is the copy of src made for this call, so nothing reachable from a proof is
