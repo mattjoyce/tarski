@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 import (
 	"bytes"

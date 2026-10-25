@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -7,25 +7,25 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 const demoRules = `up(X) :- node(X), not edge(X, _).
 top(X) :- up(X).
 `
 
-func demoResult(t *testing.T) datalog.Result {
+func demoResult(t *testing.T) tarski.Result {
 	t.Helper()
-	set, err := datalog.NewRuleSet("demo", 1, demoRules)
+	set, err := tarski.NewRuleSet("demo", 1, demoRules)
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
-	plan, err := datalog.Compile(testSchema, set.Program)
+	plan, err := tarski.Compile(testSchema, set.Program)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, newBase(t, fact("node", "a"), fact("node", "b"), fact("edge", "b", "c")),
-		datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, fact("node", "a"), fact("node", "b"), fact("edge", "b", "c")),
+		tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -65,11 +65,11 @@ func TestRender_Strings(t *testing.T) {
 // A tuple shown once is not expanded again.
 func TestRender_SharedSubproofIsNotRepeated(t *testing.T) {
 	t.Parallel()
-	plan, err := datalog.Compile(testSchema, parse(t, `l(X) :- node(X). both(X) :- l(X), l(X).`))
+	plan, err := tarski.Compile(testSchema, parse(t, `l(X) :- node(X). both(X) :- l(X), l(X).`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestRender_JSON(t *testing.T) {
 		len(first["because"].([]any)) != 1 || doc["goal"].([]any)[0] != "b" {
 		t.Errorf("absence JSON: %s", raw)
 	}
-	open := datalog.Absence{Relation: "r", Goal: []datalog.Term{{Var: "X"}}}
+	open := tarski.Absence{Relation: "r", Goal: []tarski.Term{{Var: "X"}}}
 	if raw, _ := open.MarshalJSON(); string(raw) != `{"relation":"r","goal":[null],"truncated":false,"rules":[]}` {
 		t.Errorf("an open goal position = %s, want null", raw)
 	}
@@ -151,11 +151,11 @@ func TestRender_SharedProofJSONIsLinear(t *testing.T) {
 	for i := 1; i <= depth; i++ {
 		fmt.Fprintf(&rules, "p%d(X) :- p%d(X), p%d(X).\n", i, i-1, i-1)
 	}
-	plan, err := datalog.Compile(testSchema, parse(t, rules.String()))
+	plan, err := tarski.Compile(testSchema, parse(t, rules.String()))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -191,11 +191,11 @@ func TestRender_SharedProofJSONIsLinear(t *testing.T) {
 // Whitespace inside a quoted constant is the constant's; only the whitespace between
 // tokens is collapsed, and a comment is dropped.
 func TestRender_RuleTextKeepsConstants(t *testing.T) {
-	plan, err := datalog.Compile(testSchema, parse(t, "p(\"a  b\")  :-\n\tnode(\"a  b\"). % two spaces\n"))
+	plan, err := tarski.Compile(testSchema, parse(t, "p(\"a  b\")  :-\n\tnode(\"a  b\"). % two spaces\n"))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, newBase(t, fact("node", "a  b")), datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, fact("node", "a  b")), tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -212,15 +212,15 @@ func TestRender_RuleTextKeepsConstants(t *testing.T) {
 // A RuleFailure with no rule is not something the engine makes, but it is a public
 // value and String must not panic on it; nor must a cycle a caller built run forever.
 func TestRender_HandBuiltAbsence(t *testing.T) {
-	a := datalog.Absence{Relation: "p", Rules: []datalog.RuleFailure{{}}}
+	a := tarski.Absence{Relation: "p", Rules: []tarski.RuleFailure{{}}}
 	if got := a.String(); !strings.Contains(got, "(no rule)") {
 		t.Fatalf("want a marker for the missing rule, got %q", got)
 	}
 	if _, err := json.Marshal(a); err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	cyclic := datalog.Absence{Relation: "p", Rules: make([]datalog.RuleFailure, 1)}
-	cyclic.Rules[0].Because = []datalog.Absence{cyclic}
+	cyclic := tarski.Absence{Relation: "p", Rules: make([]tarski.RuleFailure, 1)}
+	cyclic.Rules[0].Because = []tarski.Absence{cyclic}
 	cyclic.Rules[0].Because[0].Rules = cyclic.Rules // the Because points back at its own rules
 	if got := cyclic.String(); !strings.Contains(got, "(explanation truncated)") {
 		t.Fatal("a cyclic absence must end in truncation")
@@ -232,7 +232,7 @@ func TestRender_HandBuiltAbsence(t *testing.T) {
 	if !strings.Contains(string(out), `"truncated":true`) {
 		t.Fatal("a cyclic absence must end in truncation in JSON too")
 	}
-	loop := datalog.Proof{Relation: "p", Body: make([]datalog.Proof, 1)}
+	loop := tarski.Proof{Relation: "p", Body: make([]tarski.Proof, 1)}
 	loop.Body[0] = loop
 	loop.Body[0].Body = loop.Body // the body contains itself
 	if _, err := json.Marshal(loop); err != nil {

@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // The fuzz tests run their seeds under plain `go test`; to explore, name one:
@@ -28,33 +28,33 @@ func FuzzParseCompileEvaluate(f *testing.F) {
 		if len(s) > 4096 {
 			t.Skip()
 		}
-		p, err := datalog.Parse(s)
+		p, err := tarski.Parse(s)
 		if err != nil {
 			return
 		}
 		checkStringsAreText(t, p)
-		schema := datalog.Schema{Arities: map[string]int{"input": 1}}
-		plan, err := datalog.Compile(schema, p)
+		schema := tarski.Schema{Arities: map[string]int{"input": 1}}
+		plan, err := tarski.Compile(schema, p)
 		if err != nil {
 			return
 		}
-		base, err := datalog.NewBase(schema, datalog.Fact{Relation: "input", Tuple: datalog.Tuple{datalog.String("x")}})
+		base, err := tarski.NewBase(schema, tarski.Fact{Relation: "input", Tuple: tarski.Tuple{tarski.String("x")}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		_, _ = datalog.Evaluate(ctx, plan, base, datalog.Options{Proofs: true, MaxSteps: 1000, MaxBytes: 4096})
+		_, _ = tarski.Evaluate(ctx, plan, base, tarski.Options{Proofs: true, MaxSteps: 1000, MaxBytes: 4096})
 	})
 }
 
 // checkStringsAreText fails if a parsed program holds a string constant that is not
 // valid UTF-8, which the lexer is to refuse.
-func checkStringsAreText(t *testing.T, p datalog.Program) {
+func checkStringsAreText(t *testing.T, p tarski.Program) {
 	t.Helper()
-	check := func(terms []datalog.Term) {
+	check := func(terms []tarski.Term) {
 		for _, term := range terms {
-			if !term.IsVar() && term.Const.Kind() == datalog.KindString && !utf8.ValidString(term.Const.Text()) {
+			if !term.IsVar() && term.Const.Kind() == tarski.KindString && !utf8.ValidString(term.Const.Text()) {
 				t.Fatalf("Parse produced the invalid string %q", term.Const.Text())
 			}
 		}
@@ -66,7 +66,7 @@ func checkStringsAreText(t *testing.T, p datalog.Program) {
 				check(l.Atom.Args)
 			}
 			if l.Compare != nil {
-				check([]datalog.Term{l.Compare.Left, l.Compare.Right})
+				check([]tarski.Term{l.Compare.Left, l.Compare.Right})
 			}
 		}
 	}
@@ -85,18 +85,18 @@ func FuzzTransitiveClosure(f *testing.F) {
 		if len(data) > 128 {
 			t.Skip()
 		}
-		schema := datalog.Schema{Arities: map[string]int{"edge": 2}}
-		plan, err := datalog.Compile(schema, parse(t, `reach(X,Y) :- edge(X,Y). reach(X,Z) :- reach(X,Y), edge(Y,Z).`))
+		schema := tarski.Schema{Arities: map[string]int{"edge": 2}}
+		plan, err := tarski.Compile(schema, parse(t, `reach(X,Y) :- edge(X,Y). reach(X,Z) :- reach(X,Y), edge(Y,Z).`))
 		if err != nil {
 			t.Fatal(err)
 		}
 		edges, facts := graphFrom(data)
 		want := edges.closure()
-		base, err := datalog.NewBase(schema, facts...)
+		base, err := tarski.NewBase(schema, facts...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{Proofs: true, MaxSteps: 100000, MaxBytes: 100000})
+		res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true, MaxSteps: 100000, MaxBytes: 100000})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,18 +128,18 @@ func FuzzNegationAndRepeatedVariables(f *testing.F) {
 		if len(data) > 128 {
 			t.Skip()
 		}
-		schema := datalog.Schema{Arities: map[string]int{"edge": 2, "node": 1}}
-		plan, err := datalog.Compile(schema, parse(t,
+		schema := tarski.Schema{Arities: map[string]int{"edge": 2, "node": 1}}
+		plan, err := tarski.Compile(schema, parse(t,
 			`loop(X) :- edge(X,X). safe(X) :- node(X), not loop(X). disconnected(X,Y) :- node(X), node(Y), not edge(X,Y), X != Y.`))
 		if err != nil {
 			t.Fatal(err)
 		}
 		edges, facts := graphFrom(data)
-		base, err := datalog.NewBase(schema, append(nodeFacts(), facts...)...)
+		base, err := tarski.NewBase(schema, append(nodeFacts(), facts...)...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{Proofs: true, MaxSteps: 100000, MaxBytes: 100000})
+		res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true, MaxSteps: 100000, MaxBytes: 100000})
 		if err != nil {
 			t.Fatal(err)
 		}

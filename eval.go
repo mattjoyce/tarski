@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 import (
 	"context"
@@ -37,7 +37,7 @@ type Options struct {
 // at once, before any join, so the deadline is honoured however small the evaluation.
 func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error) {
 	if err := ctx.Err(); err != nil {
-		return Result{}, fmt.Errorf("datalog: evaluation stopped: %w", err)
+		return Result{}, fmt.Errorf("tarski: evaluation stopped: %w", err)
 	}
 	if err := plan.accepts(base); err != nil {
 		return Result{}, err
@@ -308,7 +308,7 @@ func (ev *evaluator) step(relation string) error {
 // how long a cancelled evaluation of many such rules runs on.
 func (ev *evaluator) deadline() error {
 	if err := ev.ctx.Err(); err != nil {
-		return fmt.Errorf("datalog: evaluation stopped: %w", err)
+		return fmt.Errorf("tarski: evaluation stopped: %w", err)
 	}
 	return nil
 }

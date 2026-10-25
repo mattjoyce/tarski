@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -6,35 +6,35 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // evalProofs compiles text over the test schema and evaluates it over facts.
-func evalProofs(t testing.TB, facts []datalog.Fact, text string, opts datalog.Options) datalog.Result {
+func evalProofs(t testing.TB, facts []tarski.Fact, text string, opts tarski.Options) tarski.Result {
 	t.Helper()
-	b, err := datalog.NewBase(testSchema, facts...)
+	b, err := tarski.NewBase(testSchema, facts...)
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
-	prog, err := datalog.Parse(text)
+	prog, err := tarski.Parse(text)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	plan, err := datalog.Compile(testSchema, prog)
+	plan, err := tarski.Compile(testSchema, prog)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, b, opts)
+	res, err := tarski.Evaluate(context.Background(), plan, b, opts)
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	return res
 }
 
-func tup(f datalog.Fact) datalog.Tuple { return f.Tuple }
+func tup(f tarski.Fact) tarski.Tuple { return f.Tuple }
 
-func chain(n int) []datalog.Fact {
-	var facts []datalog.Fact
+func chain(n int) []tarski.Fact {
+	var facts []tarski.Fact
 	for i := 0; i < n; i++ {
 		facts = append(facts, fact("edge", fmt.Sprint("n", i), fmt.Sprint("n", i+1)))
 	}
@@ -49,7 +49,7 @@ reaches(X, Z) :- reaches(X, Y), edge(Y, Z).
 func TestProof_BaseFactIsALeaf(t *testing.T) {
 	t.Parallel()
 	f := fact("edge", "a", "b")
-	res := evalProofs(t, []datalog.Fact{f}, reachRules, datalog.Options{Proofs: true})
+	res := evalProofs(t, []tarski.Fact{f}, reachRules, tarski.Options{Proofs: true})
 	p, ok := res.Proof("edge", tup(f))
 	if !ok || p.Rule != nil || p.Body != nil || p.Relation != "edge" || !reflect.DeepEqual(p.Tuple, tup(f)) {
 		t.Errorf("Proof(edge a b) = %+v, %v, want a leaf", p, ok)
@@ -59,7 +59,7 @@ func TestProof_BaseFactIsALeaf(t *testing.T) {
 func TestProof_OneStepNamesTheRuleAndTheBodyTuple(t *testing.T) {
 	t.Parallel()
 	e := fact("edge", "a", "b")
-	res := evalProofs(t, []datalog.Fact{e}, "\nreaches(X, Y) :- edge(X, Y).\n", datalog.Options{Proofs: true})
+	res := evalProofs(t, []tarski.Fact{e}, "\nreaches(X, Y) :- edge(X, Y).\n", tarski.Options{Proofs: true})
 	p, ok := res.Proof("reaches", tup(fact("reaches", "a", "b")))
 	if !ok {
 		t.Fatal("no proof of reaches(a, b)")
@@ -76,14 +76,14 @@ func TestProof_OneStepNamesTheRuleAndTheBodyTuple(t *testing.T) {
 // facts only, and names no tuple twice on one path.
 func TestProof_ThroughRecursion(t *testing.T) {
 	t.Parallel()
-	res := evalProofs(t, chain(50), reachRules, datalog.Options{Proofs: true})
+	res := evalProofs(t, chain(50), reachRules, tarski.Options{Proofs: true})
 	p, ok := res.Proof("reaches", tup(fact("reaches", "n0", "n50")))
 	if !ok {
 		t.Fatal("no proof of reaches(n0, n50)")
 	}
 	leaves := 0
-	var walk func(p datalog.Proof, path map[string]bool)
-	walk = func(p datalog.Proof, path map[string]bool) {
+	var walk func(p tarski.Proof, path map[string]bool)
+	walk = func(p tarski.Proof, path map[string]bool) {
 		k := p.Relation + "/" + fmt.Sprint(p.Tuple)
 		if path[k] {
 			t.Fatalf("%s repeats on a root-to-leaf path", k)
@@ -114,13 +114,13 @@ func TestProof_ThroughRecursion(t *testing.T) {
 // the positive atoms come in the order written, whatever order the guards run in.
 func TestProof_ListsOnlyPositiveAtoms(t *testing.T) {
 	t.Parallel()
-	facts := []datalog.Fact{
+	facts := []tarski.Fact{
 		fact("node", "ax"), fact("node", "bx"), fact("score", "ax", 5), fact("score", "bx", 1),
 		fact("edge", "ax", "bx"),
 	}
 	res := evalProofs(t, facts, `
 		pick(N, S) :- score(N, S), S > 2, not edge(N, "zz"), prefix("a", N), node(N).
-	`, datalog.Options{Proofs: true})
+	`, tarski.Options{Proofs: true})
 	p, ok := res.Proof("pick", tup(fact("pick", "ax", 5)))
 	if !ok {
 		t.Fatal("no proof of pick(ax, 5)")
@@ -136,13 +136,13 @@ func TestProof_ListsOnlyPositiveAtoms(t *testing.T) {
 func TestProof_Absent(t *testing.T) {
 	t.Parallel()
 	facts := chain(2)
-	off := evalProofs(t, facts, reachRules, datalog.Options{})
+	off := evalProofs(t, facts, reachRules, tarski.Options{})
 	for _, c := range []struct{ rel, a, b string }{{"edge", "n0", "n1"}, {"reaches", "n0", "n2"}} {
 		if _, ok := off.Proof(c.rel, tup(fact(c.rel, c.a, c.b))); ok {
 			t.Errorf("Proofs off: %s(%s, %s) has a proof", c.rel, c.a, c.b)
 		}
 	}
-	on := evalProofs(t, facts, reachRules, datalog.Options{Proofs: true})
+	on := evalProofs(t, facts, reachRules, tarski.Options{Proofs: true})
 	for _, c := range []struct{ rel, a, b string }{{"reaches", "n2", "n0"}, {"edge", "x", "y"}, {"nothing", "a", "b"}} {
 		if _, ok := on.Proof(c.rel, tup(fact(c.rel, c.a, c.b))); ok {
 			t.Errorf("%s(%s, %s) is not in the result but has a proof", c.rel, c.a, c.b)
@@ -153,7 +153,7 @@ func TestProof_Absent(t *testing.T) {
 // A program fact is a rule with no body: derived, so it names its rule.
 func TestProof_ProgramFact(t *testing.T) {
 	t.Parallel()
-	res := evalProofs(t, nil, `kind("bp").`, datalog.Options{Proofs: true})
+	res := evalProofs(t, nil, `kind("bp").`, tarski.Options{Proofs: true})
 	p, ok := res.Proof("kind", tup(fact("kind", "bp")))
 	if !ok || p.Rule == nil || p.Body != nil {
 		t.Errorf("Proof(kind bp) = %+v, %v, want a rule with no body", p, ok)
@@ -165,7 +165,7 @@ func TestProof_ProgramFact(t *testing.T) {
 // come from earlier rounds, so the longer the path the deeper the proof.
 func TestProof_DeltaRounds(t *testing.T) {
 	t.Parallel()
-	res := evalProofs(t, chain(6), reachRules, datalog.Options{Proofs: true})
+	res := evalProofs(t, chain(6), reachRules, tarski.Options{Proofs: true})
 	ans, err := res.Relation("reaches")
 	if err != nil {
 		t.Fatal(err)
@@ -175,8 +175,8 @@ func TestProof_DeltaRounds(t *testing.T) {
 		if !ok {
 			t.Fatalf("no proof of reaches%v", tu)
 		}
-		var check func(p datalog.Proof, path map[string]bool)
-		check = func(p datalog.Proof, path map[string]bool) {
+		var check func(p tarski.Proof, path map[string]bool)
+		check = func(p tarski.Proof, path map[string]bool) {
 			k := p.Relation + fmt.Sprint(p.Tuple)
 			if path[k] {
 				t.Fatalf("%s repeats on a path", k)
@@ -201,8 +201,8 @@ func TestProof_Deterministic(t *testing.T) {
 		twice(X, Y) :- reaches(X, Y), reaches(Y, X).
 		both(X) :- twice(X, _), node(X).
 	`
-	a := evalProofs(t, facts, text, datalog.Options{Proofs: true})
-	b := evalProofs(t, facts, text, datalog.Options{Proofs: true})
+	a := evalProofs(t, facts, text, tarski.Options{Proofs: true})
+	b := evalProofs(t, facts, text, tarski.Options{Proofs: true})
 	for _, rel := range []string{"reaches", "twice", "both"} {
 		ans, err := a.Relation(rel)
 		if err != nil {
@@ -222,13 +222,13 @@ func TestProof_Deterministic(t *testing.T) {
 // reach(d): both references have equal content, and a repeat query gives the same.
 func TestProof_SharedSubproof(t *testing.T) {
 	t.Parallel()
-	facts := []datalog.Fact{fact("edge", "a", "b"), fact("edge", "a", "c"), fact("edge", "b", "d"), fact("edge", "c", "d")}
+	facts := []tarski.Fact{fact("edge", "a", "b"), fact("edge", "a", "c"), fact("edge", "b", "d"), fact("edge", "c", "d")}
 	res := evalProofs(t, facts, `
 		reach(X) :- edge("a", X).
 		reach(Z) :- reach(Y), edge(Y, Z).
 		meet(X) :- reach(X), edge("b", X), edge("c", X).
 		both(X, Y) :- edge("a", X), edge("a", Y), reach(X), reach(Y), X != Y.
-	`, datalog.Options{Proofs: true})
+	`, tarski.Options{Proofs: true})
 	p, ok := res.Proof("both", tup(fact("both", "b", "c")))
 	if !ok || len(p.Body) != 4 {
 		t.Fatalf("Proof(both b c) = %+v, %v", p, ok)
@@ -257,20 +257,20 @@ func TestProof_SharedSubproof(t *testing.T) {
 func BenchmarkEvaluate(b *testing.B) {
 	for _, proofs := range []bool{false, true} {
 		b.Run(fmt.Sprintf("proofs=%v", proofs), func(b *testing.B) {
-			base, err := datalog.NewBase(testSchema, chain(150)...)
+			base, err := tarski.NewBase(testSchema, chain(150)...)
 			if err != nil {
 				b.Fatal(err)
 			}
-			prog, _ := datalog.Parse(reachRules)
-			plan, err := datalog.Compile(testSchema, prog)
+			prog, _ := tarski.Parse(reachRules)
+			plan, err := tarski.Compile(testSchema, prog)
 			if err != nil {
 				b.Fatal(err)
 			}
-			opts := datalog.Options{Proofs: proofs}
+			opts := tarski.Options{Proofs: proofs}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := datalog.Evaluate(context.Background(), plan, base, opts); err != nil {
+				if _, err := tarski.Evaluate(context.Background(), plan, base, opts); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -282,18 +282,18 @@ func BenchmarkEvaluate(b *testing.B) {
 // evaluation on it gives the same answer and the same proofs.
 func TestProof_RuleIsACopy(t *testing.T) {
 	t.Parallel()
-	b, err := datalog.NewBase(testSchema, append(chain(4), fact("node", "n1"), fact("score", "n1", 3))...)
+	b, err := tarski.NewBase(testSchema, append(chain(4), fact("node", "n1"), fact("score", "n1", 3))...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	prog := parse(t, reachRules+`pick(N) :- node(N), score(N, S), S > 1, not edge(N, "zz").`)
-	plan, err := datalog.Compile(testSchema, prog)
+	plan, err := tarski.Compile(testSchema, prog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := datalog.Options{Proofs: true}
-	eval := func() datalog.Result {
-		res, err := datalog.Evaluate(context.Background(), plan, b, opts)
+	opts := tarski.Options{Proofs: true}
+	eval := func() tarski.Result {
+		res, err := tarski.Evaluate(context.Background(), plan, b, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -304,7 +304,7 @@ func TestProof_RuleIsACopy(t *testing.T) {
 	wantPick, _ := want.Proof("pick", tup(fact("pick", "n1")))
 	wantReach, _ := want.Proof("reaches", tup(fact("reaches", "n0", "n4")))
 
-	scribble := func(r *datalog.Rule) {
+	scribble := func(r *tarski.Rule) {
 		r.Head.Name, r.Head.Args[0].Var, r.Line = "x", "Q", -1
 		for i := range r.Body {
 			r.Body[i].Negated = !r.Body[i].Negated
@@ -317,7 +317,7 @@ func TestProof_RuleIsACopy(t *testing.T) {
 			}
 		}
 	}
-	for _, p := range []datalog.Proof{wantPick, wantReach, wantReach.Body[0]} {
+	for _, p := range []tarski.Proof{wantPick, wantReach, wantReach.Body[0]} {
 		scribble(p.Rule)
 	}
 

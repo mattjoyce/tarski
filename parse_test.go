@@ -1,11 +1,11 @@
-package datalog_test
+package tarski_test
 
 import (
 	"errors"
 	"strings"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // The syntax is small and its errors name the line and what was expected.
@@ -35,9 +35,9 @@ func TestParse(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			p, err := datalog.Parse(c.text)
+			p, err := tarski.Parse(c.text)
 			if c.wantErr != "" {
-				if !errors.Is(err, datalog.ErrSyntax) || !strings.Contains(err.Error(), c.wantErr) {
+				if !errors.Is(err, tarski.ErrSyntax) || !strings.Contains(err.Error(), c.wantErr) {
 					t.Fatalf("Parse = %v, want ErrSyntax containing %q", err, c.wantErr)
 				}
 				return
@@ -64,7 +64,7 @@ func TestParse(t *testing.T) {
 // variable's name.
 func TestParse_Terms(t *testing.T) {
 	t.Parallel()
-	p, err := datalog.Parse(`r(X, _, "s", 1.50, true) :- base(X).`)
+	p, err := tarski.Parse(`r(X, _, "s", 1.50, true) :- base(X).`)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -72,13 +72,13 @@ func TestParse_Terms(t *testing.T) {
 	if args[0].Var != "X" || args[1].Var != "_" {
 		t.Errorf("variables = %q %q, want X _", args[0].Var, args[1].Var)
 	}
-	if args[2].Const.Kind() != datalog.KindString || args[2].Const.Text() != "s" {
+	if args[2].Const.Kind() != tarski.KindString || args[2].Const.Text() != "s" {
 		t.Errorf("string = %v", args[2].Const)
 	}
-	if args[3].Const.Kind() != datalog.KindNumber || args[3].Const.Text() != "1.5" {
+	if args[3].Const.Kind() != tarski.KindNumber || args[3].Const.Text() != "1.5" {
 		t.Errorf("number = %v, want 1.5", args[3].Const.Text())
 	}
-	if args[4].Const.Kind() != datalog.KindBool || args[4].Const.Text() != "true" {
+	if args[4].Const.Kind() != tarski.KindBool || args[4].Const.Text() != "true" {
 		t.Errorf("bool = %v", args[4].Const)
 	}
 	if p.Rules[0].Line != 1 || p.Rules[0].Body[0].Atom.Name != "base" {
@@ -97,12 +97,12 @@ func TestParse_ReportsTheRuneNotTheByte(t *testing.T) {
 		{`a(Éx) :- b(X).`, `unexpected 'É'`},
 		{`日本(1).`, `unexpected '日'`},
 	} {
-		_, err := datalog.Parse(c.text)
-		if !errors.Is(err, datalog.ErrSyntax) || !strings.Contains(err.Error(), c.want) {
+		_, err := tarski.Parse(c.text)
+		if !errors.Is(err, tarski.ErrSyntax) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("Parse(%q) = %v, want ErrSyntax containing %s", c.text, err, c.want)
 		}
 	}
-	if _, err := datalog.Parse(`a("é, 日本") :- b(X).`); err != nil {
+	if _, err := tarski.Parse(`a("é, 日本") :- b(X).`); err != nil {
 		t.Errorf("a non-ASCII string constant = %v, want it parsed", err)
 	}
 }
@@ -112,18 +112,18 @@ func TestParse_ReportsTheRuneNotTheByte(t *testing.T) {
 // may start with one and a relation may not be called one.
 func TestParse_DeclarationsAndBooleans(t *testing.T) {
 	for _, src := range []string{`p/1. p/2.`, `p/2. p/1.`, `true(1).`, `p(X) :- q(X), not false(X).`} {
-		if _, err := datalog.Parse(src); !errors.Is(err, datalog.ErrSyntax) {
+		if _, err := tarski.Parse(src); !errors.Is(err, tarski.ErrSyntax) {
 			t.Errorf("Parse(%q): want ErrSyntax, got %v", src, err)
 		}
 	}
-	if p, err := datalog.Parse(`p/2. p/2.`); err != nil || p.Declared["p"] != 2 {
+	if p, err := tarski.Parse(`p/2. p/2.`); err != nil || p.Declared["p"] != 2 {
 		t.Errorf("declaring p/2 twice is harmless: %v %v", p.Declared, err)
 	}
-	p, err := datalog.Parse(`p(X) :- q(X, B), true = B. r(X) :- q(X, B), false != B.`)
+	p, err := tarski.Parse(`p(X) :- q(X, B), true = B. r(X) :- q(X, B), false != B.`)
 	if err != nil {
 		t.Fatalf("a comparison may start with a boolean constant: %v", err)
 	}
-	if cmp := p.Rules[0].Body[1].Compare; cmp == nil || cmp.Left.Const.Kind() != datalog.KindBool {
+	if cmp := p.Rules[0].Body[1].Compare; cmp == nil || cmp.Left.Const.Kind() != tarski.KindBool {
 		t.Fatalf("want a comparison with a boolean on the left, got %+v", p.Rules[0].Body[1])
 	}
 }

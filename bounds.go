@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 // Options.MaxBytes of text, or took more than Options.MaxSteps join steps. A more
 // selective rule or a smaller base is the remedy; asking again unchanged will fail
 // again.
-var ErrTooLarge = errors.New("datalog: derivation too large")
+var ErrTooLarge = errors.New("tarski: derivation too large")
 
 // The values of TooLarge.Bound.
 const (
@@ -33,10 +33,10 @@ type TooLarge struct {
 
 func (e *TooLarge) Error() string {
 	if e.Bound == BoundSteps {
-		return fmt.Sprintf("datalog: derivation too large: %d join steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
+		return fmt.Sprintf("tarski: derivation too large: %d join steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
 			"make a rule more selective or the base smaller", e.Steps, e.MaxSteps, e.Relation)
 	}
-	return fmt.Sprintf("datalog: derivation too large: %d derived tuples encode to more than %d bytes (Options.MaxBytes), at %s; "+
+	return fmt.Sprintf("tarski: derivation too large: %d derived tuples encode to more than %d bytes (Options.MaxBytes), at %s; "+
 		"make a rule more selective or the base smaller", e.Tuples, e.MaxBytes, e.Relation)
 }
 

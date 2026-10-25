@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 // relBuilder is a relation while it is being made: the place tuples are added. The
 // evaluator holds one per derived relation for as long as Evaluate runs, and a Base

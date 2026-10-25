@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 )
 
 // ErrSyntax is returned for text that is not a program.
-var ErrSyntax = errors.New("datalog: syntax")
+var ErrSyntax = errors.New("tarski: syntax")
 
 // Term is one argument of an atom or one side of a comparison: a variable, the
 // anonymous variable, or a constant.

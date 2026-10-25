@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // Validation refuses what cannot run, before anything is read, with a message that
@@ -33,8 +33,8 @@ func TestCompile_RefusesWithAReason(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := datalog.Compile(testSchema, parse(t, c.text))
-			if !errors.Is(err, datalog.ErrInvalid) || !strings.Contains(err.Error(), c.want) {
+			_, err := tarski.Compile(testSchema, parse(t, c.text))
+			if !errors.Is(err, tarski.ErrInvalid) || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("Compile = %v, want ErrInvalid containing %q", err, c.want)
 			}
 		})
@@ -54,7 +54,7 @@ func TestCompile_Accepts(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := datalog.Compile(testSchema, parse(t, c.text)); err != nil {
+			if _, err := tarski.Compile(testSchema, parse(t, c.text)); err != nil {
 				t.Errorf("Compile: %v", err)
 			}
 		})
@@ -66,13 +66,13 @@ func TestCompile_Accepts(t *testing.T) {
 func TestCompile_ChecksRunOnEveryAtom(t *testing.T) {
 	t.Parallel()
 	var seen []string
-	schema := datalog.Schema{
+	schema := tarski.Schema{
 		Arities: map[string]int{"edge": 2, "node": 1},
-		Checks: map[string]func(datalog.Atom) error{
-			"edge": func(a datalog.Atom) error { seen = append(seen, fmt.Sprint(a.Name, a.Line)); return nil },
+		Checks: map[string]func(tarski.Atom) error{
+			"edge": func(a tarski.Atom) error { seen = append(seen, fmt.Sprint(a.Name, a.Line)); return nil },
 		},
 	}
-	_, err := datalog.Compile(schema, parse(t, "a(X) :- edge(X, _), node(X), not edge(X, X).\nb(X) :- edge(X, X)."))
+	_, err := tarski.Compile(schema, parse(t, "a(X) :- edge(X, _), node(X), not edge(X, X).\nb(X) :- edge(X, X)."))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestCompile_ChecksRunOnEveryAtom(t *testing.T) {
 // set leaves for its consumer.
 func TestEvaluate_DeclaredAndUndefinedIsEmpty(t *testing.T) {
 	t.Parallel()
-	facts := []datalog.Fact{fact("node", "a"), fact("node", "b")}
+	facts := []tarski.Fact{fact("node", "a"), fact("node", "b")}
 	text := `hook/1. open(X) :- node(X), not hook(X). seen(X) :- hook(X).`
 	if got := rows(run(t, facts, text, "open")); !same(got, []string{"a", "b"}) {
 		t.Errorf("open = %v, want [a b]", got)
@@ -102,7 +102,7 @@ func TestEvaluate_DeclaredAndUndefinedIsEmpty(t *testing.T) {
 func TestNewRuleSet(t *testing.T) {
 	t.Parallel()
 	text := "% a comment\nhook/1.\nup(X) :- node(X), not hook(X).\n"
-	rs, err := datalog.NewRuleSet("demo", 2, text)
+	rs, err := tarski.NewRuleSet("demo", 2, text)
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
@@ -118,8 +118,8 @@ func TestNewRuleSet(t *testing.T) {
 	if want := "demo/2 " + rs.Hash; rs.ID() != want {
 		t.Errorf("ID = %q, want %q", rs.ID(), want)
 	}
-	again, _ := datalog.NewRuleSet("demo", 2, text)
-	other, _ := datalog.NewRuleSet("demo", 2, text+"\n")
+	again, _ := tarski.NewRuleSet("demo", 2, text)
+	other, _ := tarski.NewRuleSet("demo", 2, text+"\n")
 	if again.Hash != rs.Hash || other.Hash == rs.Hash {
 		t.Error("the hash should follow the text, byte for byte")
 	}
@@ -133,15 +133,15 @@ func TestNewRuleSet_Refuses(t *testing.T) {
 		text    string
 		wantIs  error
 	}{
-		{"", 1, "a(1).", datalog.ErrInvalid},
-		{"has space", 1, "a(1).", datalog.ErrInvalid},
-		{"semi;colon", 1, "a(1).", datalog.ErrInvalid},
-		{"slash/name", 1, "a(1).", datalog.ErrInvalid},
-		{"neg", -1, "a(1).", datalog.ErrInvalid},
-		{"bad", 1, "a(1)", datalog.ErrSyntax},
+		{"", 1, "a(1).", tarski.ErrInvalid},
+		{"has space", 1, "a(1).", tarski.ErrInvalid},
+		{"semi;colon", 1, "a(1).", tarski.ErrInvalid},
+		{"slash/name", 1, "a(1).", tarski.ErrInvalid},
+		{"neg", -1, "a(1).", tarski.ErrInvalid},
+		{"bad", 1, "a(1)", tarski.ErrSyntax},
 	}
 	for _, c := range cases {
-		if _, err := datalog.NewRuleSet(c.name, c.version, c.text); !errors.Is(err, c.wantIs) {
+		if _, err := tarski.NewRuleSet(c.name, c.version, c.text); !errors.Is(err, c.wantIs) {
 			t.Errorf("NewRuleSet(%q, %d, %q) = %v, want %v", c.name, c.version, c.text, err, c.wantIs)
 		}
 	}
@@ -151,7 +151,7 @@ func TestNewRuleSet_Refuses(t *testing.T) {
 // hand does not.
 func TestRuleSet_Verify(t *testing.T) {
 	t.Parallel()
-	rs, err := datalog.NewRuleSet("demo", 1, "up(X) :- node(X).\n")
+	rs, err := tarski.NewRuleSet("demo", 1, "up(X) :- node(X).\n")
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
@@ -162,10 +162,10 @@ func TestRuleSet_Verify(t *testing.T) {
 	edited.Program.Text += "% edited\n"
 	forged := rs
 	forged.Hash = "sha256:" + strings.Repeat("0", 64)
-	for name, bad := range map[string]datalog.RuleSet{
+	for name, bad := range map[string]tarski.RuleSet{
 		"edited text": edited, "forged hash": forged, "no text": {Name: "x", Hash: rs.Hash},
 	} {
-		if err := bad.Verify(); !errors.Is(err, datalog.ErrInvalid) {
+		if err := bad.Verify(); !errors.Is(err, tarski.ErrInvalid) {
 			t.Errorf("%s: Verify = %v, want ErrInvalid", name, err)
 		}
 	}
@@ -174,7 +174,7 @@ func TestRuleSet_Verify(t *testing.T) {
 // Plan.Arity answers for base and derived relations and for nothing else.
 func TestPlan_Arity(t *testing.T) {
 	t.Parallel()
-	plan, err := datalog.Compile(testSchema, parse(t, `hook/3. up(X, Y) :- edge(X, Y).`))
+	plan, err := tarski.Compile(testSchema, parse(t, `hook/3. up(X, Y) :- edge(X, Y).`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -199,16 +199,16 @@ func TestPlan_Arity(t *testing.T) {
 // dropped, so it is refused, naming the relation.
 func TestEvaluate_RefusesABaseHoldingADerivedRelation(t *testing.T) {
 	t.Parallel()
-	plan, err := datalog.Compile(datalog.Schema{Arities: map[string]int{"a": 1}}, parse(t, `d(X) :- a(X).`))
+	plan, err := tarski.Compile(tarski.Schema{Arities: map[string]int{"a": 1}}, parse(t, `d(X) :- a(X).`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	base, err := datalog.NewBase(datalog.Schema{Arities: map[string]int{"a": 1, "d": 1}}, fact("a", "y"), fact("d", "x"))
+	base, err := tarski.NewBase(tarski.Schema{Arities: map[string]int{"a": 1, "d": 1}}, fact("a", "y"), fact("d", "x"))
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
-	_, err = datalog.Evaluate(context.Background(), plan, base, datalog.Options{})
-	if !errors.Is(err, datalog.ErrInvalid) || !strings.Contains(err.Error(), "the base holds d, which the plan derives") {
+	_, err = tarski.Evaluate(context.Background(), plan, base, tarski.Options{})
+	if !errors.Is(err, tarski.ErrInvalid) || !strings.Contains(err.Error(), "the base holds d, which the plan derives") {
 		t.Errorf("Evaluate = %v, want ErrInvalid naming d", err)
 	}
 }
@@ -219,16 +219,16 @@ var errCheck = errors.New("check sentinel")
 // through Compile and through NewBase, beside ErrInvalid.
 func TestSchemaChecks_KeepTheirSentinel(t *testing.T) {
 	t.Parallel()
-	schema := datalog.Schema{
+	schema := tarski.Schema{
 		Arities: map[string]int{"node": 1},
-		Checks:  map[string]func(datalog.Atom) error{"node": func(datalog.Atom) error { return errCheck }},
+		Checks:  map[string]func(tarski.Atom) error{"node": func(tarski.Atom) error { return errCheck }},
 	}
-	_, err := datalog.Compile(schema, parse(t, `a(X) :- node(X).`))
-	if !errors.Is(err, errCheck) || !errors.Is(err, datalog.ErrInvalid) {
+	_, err := tarski.Compile(schema, parse(t, `a(X) :- node(X).`))
+	if !errors.Is(err, errCheck) || !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("Compile = %v, want the check's sentinel and ErrInvalid", err)
 	}
-	_, err = datalog.NewBase(schema, fact("node", "a"))
-	if !errors.Is(err, errCheck) || !errors.Is(err, datalog.ErrInvalid) {
+	_, err = tarski.NewBase(schema, fact("node", "a"))
+	if !errors.Is(err, errCheck) || !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("NewBase = %v, want the check's sentinel and ErrInvalid", err)
 	}
 }
@@ -236,7 +236,7 @@ func TestSchemaChecks_KeepTheirSentinel(t *testing.T) {
 // An empty schema says so, instead of ending a sentence on "the relations are".
 func TestErrors_AnEmptySchemaIsNamed(t *testing.T) {
 	t.Parallel()
-	_, err := datalog.NewBase(datalog.Schema{}, fact("node", "a"))
+	_, err := tarski.NewBase(tarski.Schema{}, fact("node", "a"))
 	if err == nil || !strings.HasSuffix(err.Error(), "the schema has no relations") {
 		t.Errorf("NewBase = %v, want it to end by saying the schema has no relations", err)
 	}

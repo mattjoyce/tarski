@@ -1,6 +1,6 @@
-package datalog_test
+package tarski_test
 
-import "github.com/mattjoyce/shearline/datalog"
+import "github.com/mattjoyce/tarski"
 
 // The oracles the fuzz tests check the engine against: plain Go over a small boolean
 // matrix, sharing nothing with the evaluator, so they can disagree with it.
@@ -14,22 +14,22 @@ type matrix [oracleNodes][oracleNodes]bool
 
 // graphFrom reads data two bytes at a time as edges between nodes mod oracleNodes, and
 // returns the matrix and the same edges as edge/2 facts, duplicates included.
-func graphFrom(data []byte) (matrix, []datalog.Fact) {
+func graphFrom(data []byte) (matrix, []tarski.Fact) {
 	var m matrix
-	var facts []datalog.Fact
+	var facts []tarski.Fact
 	for i := 0; i+1 < len(data); i += 2 {
 		a, b := int(data[i]%oracleNodes), int(data[i+1]%oracleNodes)
 		m[a][b] = true
-		facts = append(facts, datalog.Fact{Relation: "edge", Tuple: ints(a, b)})
+		facts = append(facts, tarski.Fact{Relation: "edge", Tuple: ints(a, b)})
 	}
 	return m, facts
 }
 
 // nodeFacts is node/1 for every node, whether or not an edge touches it.
-func nodeFacts() []datalog.Fact {
-	facts := make([]datalog.Fact, oracleNodes)
+func nodeFacts() []tarski.Fact {
+	facts := make([]tarski.Fact, oracleNodes)
 	for i := range facts {
-		facts[i] = datalog.Fact{Relation: "node", Tuple: ints(i)}
+		facts[i] = tarski.Fact{Relation: "node", Tuple: ints(i)}
 	}
 	return facts
 }
@@ -47,10 +47,10 @@ func (m matrix) closure() matrix {
 	return m
 }
 
-func ints(vs ...int) datalog.Tuple {
-	t := make(datalog.Tuple, len(vs))
+func ints(vs ...int) tarski.Tuple {
+	t := make(tarski.Tuple, len(vs))
 	for i, v := range vs {
-		t[i] = datalog.Int(int64(v))
+		t[i] = tarski.Int(int64(v))
 	}
 	return t
 }

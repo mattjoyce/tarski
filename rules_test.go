@@ -1,11 +1,11 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
 	"reflect"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // A rule keeps the text it was written as: one line or several, a fact too, trimmed,
@@ -47,7 +47,7 @@ last(1).`)
 // each rule with it, leaving a bare program's rules untagged and the caller's alone.
 func TestCompile_TagsRulesWithTheirSet(t *testing.T) {
 	t.Parallel()
-	set, err := datalog.NewRuleSet("demo", 3, "up(X) :- node(X).\n")
+	set, err := tarski.NewRuleSet("demo", 3, "up(X) :- node(X).\n")
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
@@ -55,16 +55,16 @@ func TestCompile_TagsRulesWithTheirSet(t *testing.T) {
 		t.Errorf("program name = %q, want demo/3", set.Program.Name)
 	}
 	bare := parse(t, `down(X) :- node(X).`)
-	plan, err := datalog.Compile(testSchema, set.Program, bare)
+	plan, err := tarski.Compile(testSchema, set.Program, bare)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	for rel, want := range map[string]string{"up": "demo/3", "down": ""} {
-		p, ok := res.Proof(rel, datalog.Tuple{datalog.String("a")})
+		p, ok := res.Proof(rel, tarski.Tuple{tarski.String("a")})
 		if !ok || p.Rule == nil || p.Rule.Set != want {
 			t.Fatalf("Proof(%s a) = %+v, %v; want a rule from set %q", rel, p, ok, want)
 		}
@@ -78,28 +78,28 @@ func TestCompile_TagsRulesWithTheirSet(t *testing.T) {
 // as written: the consumer's rule over the base set's derived tuple.
 func TestProof_NamesTheSetAndTheText(t *testing.T) {
 	t.Parallel()
-	base, err := datalog.NewRuleSet("base", 1, "reach(X, Y) :- edge(X, Y).\nreach(X, Z) :- reach(X, Y), edge(Y, Z).\n")
+	base, err := tarski.NewRuleSet("base", 1, "reach(X, Y) :- edge(X, Y).\nreach(X, Z) :- reach(X, Y), edge(Y, Z).\n")
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
-	extra, err := datalog.NewRuleSet("extra", 2, "island(X) :-\n  node(X),\n  not reach(X, _).\n")
+	extra, err := tarski.NewRuleSet("extra", 2, "island(X) :-\n  node(X),\n  not reach(X, _).\n")
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
-	plan, err := datalog.Compile(testSchema, base.Program, extra.Program)
+	plan, err := tarski.Compile(testSchema, base.Program, extra.Program)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 	b := newBase(t, fact("node", "a"), fact("node", "z"), fact("edge", "a", "b"), fact("edge", "b", "c"))
-	res, err := datalog.Evaluate(context.Background(), plan, b, datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, b, tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	island, ok := res.Proof("island", datalog.Tuple{datalog.String("z")})
+	island, ok := res.Proof("island", tarski.Tuple{tarski.String("z")})
 	if !ok || island.Rule.Set != "extra/2" || island.Rule.Text != "island(X) :-\n  node(X),\n  not reach(X, _)." {
 		t.Fatalf("island proof = %+v, %v", island, ok)
 	}
-	reach, ok := res.Proof("reach", datalog.Tuple{datalog.String("a"), datalog.String("c")})
+	reach, ok := res.Proof("reach", tarski.Tuple{tarski.String("a"), tarski.String("c")})
 	if !ok || reach.Rule.Set != "base/1" || reach.Rule.Text != "reach(X, Z) :- reach(X, Y), edge(Y, Z)." {
 		t.Fatalf("reach proof = %+v, %v", reach, ok)
 	}
@@ -112,7 +112,7 @@ func TestProof_NamesTheSetAndTheText(t *testing.T) {
 // through the copy's atoms, comparisons, declarations and rules leaves the original be.
 func TestProgram_Clone(t *testing.T) {
 	t.Parallel()
-	set, err := datalog.NewRuleSet("demo", 1, "hook/2.\nup(X) :- node(X), not edge(X, _), X != \"q\".\nkind(\"bp\").\n")
+	set, err := tarski.NewRuleSet("demo", 1, "hook/2.\nup(X) :- node(X), not edge(X, _), X != \"q\".\nkind(\"bp\").\n")
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
@@ -130,16 +130,16 @@ func TestProgram_Clone(t *testing.T) {
 	c.Declared["hook"] = 9
 	c.Declared["new"] = 1
 	c.Rules[0].Head.Name = "x"
-	c.Rules[0].Head.Args[0] = datalog.Term{Var: "Z"}
+	c.Rules[0].Head.Args[0] = tarski.Term{Var: "Z"}
 	c.Rules[0].Body[0].Atom.Name = "x"
-	c.Rules[0].Body[1].Atom.Args[0] = datalog.Term{Var: "Z"}
+	c.Rules[0].Body[1].Atom.Args[0] = tarski.Term{Var: "Z"}
 	c.Rules[0].Body[2].Compare.Op = "="
 	c.Rules[0].Text, c.Rules[0].Set = "x", "x"
-	c.Rules[1].Head.Args[0] = datalog.Term{Var: "Z"}
+	c.Rules[1].Head.Args[0] = tarski.Term{Var: "Z"}
 	if !reflect.DeepEqual(orig, want) {
 		t.Errorf("writing through the clone changed the original:\n%+v\nwas\n%+v", orig, want)
 	}
-	if zero := (datalog.Program{}).Clone(); zero.Rules != nil || zero.Declared != nil {
+	if zero := (tarski.Program{}).Clone(); zero.Rules != nil || zero.Declared != nil {
 		t.Errorf("Clone of the zero Program = %+v, want it zero", zero)
 	}
 }

@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // These tests hold the fixes from the red/blue file audit of 2026-10-22
@@ -17,7 +17,7 @@ import (
 // must be an answer as written: sorted, no repeats, one width, a relation name.
 func TestAnswer_MarshalsAsBytesAndReadsBackOnlyAnAnswer(t *testing.T) {
 	t.Parallel()
-	a, err := tryRun(newBase(t, fact("edge", "b", "c"), fact("edge", "a", "b")), `e(X, Y) :- edge(X, Y).`, "e", datalog.Options{})
+	a, err := tryRun(newBase(t, fact("edge", "b", "c"), fact("edge", "a", "b")), `e(X, Y) :- edge(X, Y).`, "e", tarski.Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -28,11 +28,11 @@ func TestAnswer_MarshalsAsBytesAndReadsBackOnlyAnAnswer(t *testing.T) {
 	if a.Relation() != "e" || a.Len() != 2 || a.Tuples()[0][0].Text() != "a" {
 		t.Fatalf("accessors: %s %d %v", a.Relation(), a.Len(), a.Tuples())
 	}
-	var back datalog.Answer
+	var back tarski.Answer
 	if err := json.Unmarshal(out, &back); err != nil || back.Hash() != a.Hash() {
 		t.Fatalf("round trip: %v, hash %s want %s", err, back.Hash(), a.Hash())
 	}
-	if _, err := json.Marshal(datalog.Answer{}); !errors.Is(err, datalog.ErrInvalid) {
+	if _, err := json.Marshal(tarski.Answer{}); !errors.Is(err, tarski.ErrInvalid) {
 		t.Fatalf("a zero Answer marshals to an error, got %v", err)
 	}
 	for _, bad := range []string{
@@ -46,8 +46,8 @@ func TestAnswer_MarshalsAsBytesAndReadsBackOnlyAnAnswer(t *testing.T) {
 		`{"relation":"e\u0000x","tuples":[["a"]]}`,    // a NUL in the name
 		`{"relation":"","tuples":[["a"]]}`,            // no name
 	} {
-		var b datalog.Answer
-		if err := json.Unmarshal([]byte(bad), &b); !errors.Is(err, datalog.ErrSyntax) {
+		var b tarski.Answer
+		if err := json.Unmarshal([]byte(bad), &b); !errors.Is(err, tarski.ErrSyntax) {
 			t.Errorf("Unmarshal(%s) = %v, want ErrSyntax", bad, err)
 		}
 	}
@@ -65,7 +65,7 @@ func TestParse_StringEscapes(t *testing.T) {
 		`p("a\tb\n").`:             "a\tb\n",
 		`p("\"quoted\" \\ back").`: `"quoted" \ back`,
 	} {
-		p, err := datalog.Parse(src)
+		p, err := tarski.Parse(src)
 		if err != nil {
 			t.Errorf("Parse(%s): %v", src, err)
 			continue
@@ -75,7 +75,7 @@ func TestParse_StringEscapes(t *testing.T) {
 		}
 	}
 	for _, src := range []string{`p("\ud83d").`, `p("\ude00").`, `p("\q").`, `p("\xff").`, `p("\u12").`} {
-		if _, err := datalog.Parse(src); !errors.Is(err, datalog.ErrSyntax) {
+		if _, err := tarski.Parse(src); !errors.Is(err, tarski.ErrSyntax) {
 			t.Errorf("Parse(%s) = %v, want ErrSyntax", src, err)
 		}
 	}
@@ -86,33 +86,33 @@ func TestParse_StringEscapes(t *testing.T) {
 // variable, and a string is UTF-8.
 func TestCompile_HandBuiltShape(t *testing.T) {
 	t.Parallel()
-	c := func(s string) datalog.Term { return datalog.Term{Const: datalog.String(s)} }
-	v := func(n string) datalog.Term { return datalog.Term{Var: n} }
-	rule := func(head datalog.Atom, body ...datalog.Literal) datalog.Program {
-		return datalog.Program{Rules: []datalog.Rule{{Head: head, Body: body}}}
+	c := func(s string) tarski.Term { return tarski.Term{Const: tarski.String(s)} }
+	v := func(n string) tarski.Term { return tarski.Term{Var: n} }
+	rule := func(head tarski.Atom, body ...tarski.Literal) tarski.Program {
+		return tarski.Program{Rules: []tarski.Rule{{Head: head, Body: body}}}
 	}
-	cases := map[string]datalog.Program{
-		"NUL in a head name":        rule(datalog.Atom{Name: "a\x00b", Args: []datalog.Term{c("x")}}),
-		"upper-case head name":      rule(datalog.Atom{Name: "Node", Args: []datalog.Term{c("x")}}),
-		"zero-arity head":           rule(datalog.Atom{Name: "p"}),
-		"zero-arity body atom":      rule(datalog.Atom{Name: "p", Args: []datalog.Term{v("X")}}, datalog.Literal{Atom: &datalog.Atom{Name: "node", Args: []datalog.Term{v("X")}}}, datalog.Literal{Atom: &datalog.Atom{Name: "q"}}),
-		"invalid UTF-8 in the head": rule(datalog.Atom{Name: "p", Args: []datalog.Term{c("\xff")}}),
-		"invalid UTF-8 in the body": rule(datalog.Atom{Name: "p", Args: []datalog.Term{v("X")}}, datalog.Literal{Atom: &datalog.Atom{Name: "node", Args: []datalog.Term{v("X")}}}, datalog.Literal{Compare: &datalog.Comparison{Op: "=", Left: v("X"), Right: c("\xff")}}),
-		"lower-case variable":       rule(datalog.Atom{Name: "p", Args: []datalog.Term{v("x")}}, datalog.Literal{Atom: &datalog.Atom{Name: "node", Args: []datalog.Term{v("x")}}}),
+	cases := map[string]tarski.Program{
+		"NUL in a head name":        rule(tarski.Atom{Name: "a\x00b", Args: []tarski.Term{c("x")}}),
+		"upper-case head name":      rule(tarski.Atom{Name: "Node", Args: []tarski.Term{c("x")}}),
+		"zero-arity head":           rule(tarski.Atom{Name: "p"}),
+		"zero-arity body atom":      rule(tarski.Atom{Name: "p", Args: []tarski.Term{v("X")}}, tarski.Literal{Atom: &tarski.Atom{Name: "node", Args: []tarski.Term{v("X")}}}, tarski.Literal{Atom: &tarski.Atom{Name: "q"}}),
+		"invalid UTF-8 in the head": rule(tarski.Atom{Name: "p", Args: []tarski.Term{c("\xff")}}),
+		"invalid UTF-8 in the body": rule(tarski.Atom{Name: "p", Args: []tarski.Term{v("X")}}, tarski.Literal{Atom: &tarski.Atom{Name: "node", Args: []tarski.Term{v("X")}}}, tarski.Literal{Compare: &tarski.Comparison{Op: "=", Left: v("X"), Right: c("\xff")}}),
+		"lower-case variable":       rule(tarski.Atom{Name: "p", Args: []tarski.Term{v("x")}}, tarski.Literal{Atom: &tarski.Atom{Name: "node", Args: []tarski.Term{v("x")}}}),
 		"declared NUL name":         {Declared: map[string]int{"a\x00b": 1}},
 	}
 	for name, prog := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := datalog.Compile(testSchema, prog); !errors.Is(err, datalog.ErrInvalid) {
+			if _, err := tarski.Compile(testSchema, prog); !errors.Is(err, tarski.ErrInvalid) {
 				t.Fatalf("Compile = %v, want ErrInvalid", err)
 			}
 		})
 	}
-	bad := datalog.Schema{Arities: map[string]int{"a\x00b": 1}}
-	if _, err := datalog.Compile(bad); !errors.Is(err, datalog.ErrInvalid) {
+	bad := tarski.Schema{Arities: map[string]int{"a\x00b": 1}}
+	if _, err := tarski.Compile(bad); !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("a schema with a NUL in a name: %v, want ErrInvalid", err)
 	}
-	if _, err := datalog.NewBase(bad); !errors.Is(err, datalog.ErrInvalid) {
+	if _, err := tarski.NewBase(bad); !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("a base with a NUL in a name: %v, want ErrInvalid", err)
 	}
 }
@@ -121,21 +121,21 @@ func TestCompile_HandBuiltShape(t *testing.T) {
 // changes nothing the plan derives.
 func TestCompile_CheckSeesACopy(t *testing.T) {
 	t.Parallel()
-	var kept []datalog.Term
-	schema := datalog.Schema{
+	var kept []tarski.Term
+	schema := tarski.Schema{
 		Arities: map[string]int{"node": 1},
-		Checks:  map[string]func(datalog.Atom) error{"node": func(a datalog.Atom) error { kept = a.Args; return nil }},
+		Checks:  map[string]func(tarski.Atom) error{"node": func(a tarski.Atom) error { kept = a.Args; return nil }},
 	}
-	plan, err := datalog.Compile(schema, parse(t, `out("yes") :- node("allowed").`))
+	plan, err := tarski.Compile(schema, parse(t, `out("yes") :- node("allowed").`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	base, err := datalog.NewBase(schema, fact("node", "other"))
+	base, err := tarski.NewBase(schema, fact("node", "other"))
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
-	kept[0] = datalog.Term{Const: datalog.String("other")}
-	res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{})
+	kept[0] = tarski.Term{Const: tarski.String("other")}
+	res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -148,32 +148,32 @@ func TestCompile_CheckSeesACopy(t *testing.T) {
 // caller's tuple under it.
 func TestNewBase_StoresWhatWasChecked(t *testing.T) {
 	t.Parallel()
-	tuple := datalog.Tuple{datalog.String("safe")}
-	schema := datalog.Schema{
+	tuple := tarski.Tuple{tarski.String("safe")}
+	schema := tarski.Schema{
 		Arities: map[string]int{"node": 1},
-		Checks: map[string]func(datalog.Atom) error{"node": func(datalog.Atom) error {
-			tuple[0] = datalog.String("\xff")
+		Checks: map[string]func(tarski.Atom) error{"node": func(tarski.Atom) error {
+			tuple[0] = tarski.String("\xff")
 			return nil
 		}},
 	}
-	for _, build := range map[string]func() (datalog.Base, error){
-		"NewBase": func() (datalog.Base, error) {
-			return datalog.NewBase(schema, datalog.Fact{Relation: "node", Tuple: tuple})
+	for _, build := range map[string]func() (tarski.Base, error){
+		"NewBase": func() (tarski.Base, error) {
+			return tarski.NewBase(schema, tarski.Fact{Relation: "node", Tuple: tuple})
 		},
-		"With": func() (datalog.Base, error) {
-			b, err := datalog.NewBase(schema)
+		"With": func() (tarski.Base, error) {
+			b, err := tarski.NewBase(schema)
 			if err != nil {
 				return b, err
 			}
-			return b.With(datalog.Fact{Relation: "node", Tuple: tuple})
+			return b.With(tarski.Fact{Relation: "node", Tuple: tuple})
 		},
 	} {
-		tuple[0] = datalog.String("safe")
+		tuple[0] = tarski.String("safe")
 		b, err := build()
 		if err != nil {
 			t.Fatalf("build: %v", err)
 		}
-		res, err := datalog.Evaluate(context.Background(), datalog.Plan{}, b, datalog.Options{})
+		res, err := tarski.Evaluate(context.Background(), tarski.Plan{}, b, tarski.Options{})
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -188,18 +188,18 @@ func TestNewBase_StoresWhatWasChecked(t *testing.T) {
 func TestNumber_JSONGrammar(t *testing.T) {
 	t.Parallel()
 	for _, bad := range []string{"+1", "01", ".5", "1.", "0x1p0", "1_000", "1e", "-", ""} {
-		if _, err := datalog.Number(bad); !errors.Is(err, datalog.ErrSyntax) {
+		if _, err := tarski.Number(bad); !errors.Is(err, tarski.ErrSyntax) {
 			t.Errorf("Number(%q) = %v, want ErrSyntax", bad, err)
 		}
 	}
 	for _, good := range []string{"0", "-0", "1", "1.5", "1e3", "1E+3", "-2.5e-3", "123456789"} {
-		if _, err := datalog.Number(good); err != nil {
+		if _, err := tarski.Number(good); err != nil {
 			t.Errorf("Number(%q) = %v", good, err)
 		}
 	}
-	var c datalog.Const
+	var c tarski.Const
 	for _, bad := range []string{"1 2", "true garbage", `"a" "b"`} {
-		if err := c.UnmarshalJSON([]byte(bad)); !errors.Is(err, datalog.ErrSyntax) {
+		if err := c.UnmarshalJSON([]byte(bad)); !errors.Is(err, tarski.ErrSyntax) {
 			t.Errorf("UnmarshalJSON(%q) = %v, want ErrSyntax", bad, err)
 		}
 	}
@@ -210,23 +210,23 @@ func TestNumber_JSONGrammar(t *testing.T) {
 func TestRuleSet_IdentityHeldByVerify(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"bad\vname", "bad\fname", "bad name", "bad name", "bad\x00name", "a/b", "a;b", ""} {
-		if _, err := datalog.NewRuleSet(name, 1, `p("x").`); !errors.Is(err, datalog.ErrInvalid) {
+		if _, err := tarski.NewRuleSet(name, 1, `p("x").`); !errors.Is(err, tarski.ErrInvalid) {
 			t.Errorf("NewRuleSet(%q) = %v, want ErrInvalid", name, err)
 		}
 	}
-	if _, err := datalog.NewRuleSet("empty", 0, ""); !errors.Is(err, datalog.ErrInvalid) {
+	if _, err := tarski.NewRuleSet("empty", 0, ""); !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("NewRuleSet with no text = %v, want ErrInvalid", err)
 	}
-	s, err := datalog.NewRuleSet("ok", 1, `p("x").`)
+	s, err := tarski.NewRuleSet("ok", 1, `p("x").`)
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
-	for _, edit := range []func(*datalog.RuleSet){
-		func(s *datalog.RuleSet) { s.Name = "" },
-		func(s *datalog.RuleSet) { s.Name = "a/b" },
-		func(s *datalog.RuleSet) { s.Name = "a;b" },
-		func(s *datalog.RuleSet) { s.Name = "a\nb" },
-		func(s *datalog.RuleSet) { s.Version = -1 },
+	for _, edit := range []func(*tarski.RuleSet){
+		func(s *tarski.RuleSet) { s.Name = "" },
+		func(s *tarski.RuleSet) { s.Name = "a/b" },
+		func(s *tarski.RuleSet) { s.Name = "a;b" },
+		func(s *tarski.RuleSet) { s.Name = "a\nb" },
+		func(s *tarski.RuleSet) { s.Version = -1 },
 	} {
 		edited := s
 		edited.Program = s.Program.Clone()
@@ -235,7 +235,7 @@ func TestRuleSet_IdentityHeldByVerify(t *testing.T) {
 		if edited.Version < 0 {
 			edited.Program.Name = edited.Name + "/-1"
 		}
-		if err := edited.Verify(); !errors.Is(err, datalog.ErrInvalid) {
+		if err := edited.Verify(); !errors.Is(err, tarski.ErrInvalid) {
 			t.Errorf("Verify of a set with identity %q/%d = %v, want ErrInvalid", edited.Name, edited.Version, err)
 		}
 	}
@@ -246,15 +246,15 @@ func TestRuleSet_IdentityHeldByVerify(t *testing.T) {
 func TestWhyNot_ScanIsCharged(t *testing.T) {
 	t.Parallel()
 	const n = 70000 // over whyNotSteps
-	facts := make([]datalog.Fact, n)
+	facts := make([]tarski.Fact, n)
 	for i := range facts {
 		facts[i] = fact("node", "n"+strings.Repeat("x", i%7)+string(rune('a'+i%26))+itoa(i))
 	}
-	plan, err := datalog.Compile(testSchema, parse(t, `big(X) :- node(X). q("m") :- big("missing").`))
+	plan, err := tarski.Compile(testSchema, parse(t, `big(X) :- node(X). q("m") :- big("missing").`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, newBase(t, facts...), datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, facts...), tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}

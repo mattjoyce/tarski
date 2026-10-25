@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 // This file holds the evaluator's values and the lookups a join makes over them:
 // relation, a set of tuples that never changes, source, what a join reads, and the

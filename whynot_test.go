@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -8,12 +8,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // rbacSchema and rbacText are the shape of policy/rbac.dl, so the why-not walk is held
 // to the case it exists for without datalog importing policy.
-var rbacSchema = datalog.Schema{Arities: map[string]int{
+var rbacSchema = tarski.Schema{Arities: map[string]int{
 	"principal": 1, "action": 1, "resource": 1, "role": 2, "inherits": 2, "grants": 3, "denied": 3,
 }}
 
@@ -27,39 +27,39 @@ allow(P, A, R) :- permit(P, A, Pat), resource(R), prefix(Pat, R), not deny(P, A,
 
 // rbacResult evaluates the rbac-shaped rules, with proofs on, over a request for tok to
 // read timeline/a and the given standing facts.
-func rbacResult(t *testing.T, standing ...datalog.Fact) datalog.Result {
+func rbacResult(t *testing.T, standing ...tarski.Fact) tarski.Result {
 	t.Helper()
-	set, err := datalog.NewRuleSet("rbac", 1, rbacText)
+	set, err := tarski.NewRuleSet("rbac", 1, rbacText)
 	if err != nil {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
-	plan, err := datalog.Compile(rbacSchema, set.Program)
+	plan, err := tarski.Compile(rbacSchema, set.Program)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	facts := append([]datalog.Fact{fact("principal", "tok"), fact("action", "read"), fact("resource", "timeline/a")}, standing...)
-	base, err := datalog.NewBase(rbacSchema, facts...)
+	facts := append([]tarski.Fact{fact("principal", "tok"), fact("action", "read"), fact("resource", "timeline/a")}, standing...)
+	base, err := tarski.NewBase(rbacSchema, facts...)
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	return res
 }
 
-func tuple(vs ...string) datalog.Tuple {
-	t := make(datalog.Tuple, len(vs))
+func tuple(vs ...string) tarski.Tuple {
+	t := make(tarski.Tuple, len(vs))
 	for i, v := range vs {
-		t[i] = datalog.String(v)
+		t[i] = tarski.String(v)
 	}
 	return t
 }
 
 var allowGoal = tuple("tok", "read", "timeline/a")
 
-func whyNot(t *testing.T, res datalog.Result, name string, tup datalog.Tuple, depth int) datalog.Absence {
+func whyNot(t *testing.T, res tarski.Result, name string, tup tarski.Tuple, depth int) tarski.Absence {
 	t.Helper()
 	a, ok := res.WhyNot(name, tup, depth)
 	if !ok {
@@ -69,9 +69,9 @@ func whyNot(t *testing.T, res datalog.Result, name string, tup datalog.Tuple, de
 }
 
 // failed is a rule failure's literal as text, through the renderer's own form.
-func failed(rf datalog.RuleFailure) string {
-	rf.Rule = &datalog.Rule{}
-	a := datalog.Absence{Relation: "x", Rules: []datalog.RuleFailure{rf}}
+func failed(rf tarski.RuleFailure) string {
+	rf.Rule = &tarski.Rule{}
+	a := tarski.Absence{Relation: "x", Rules: []tarski.RuleFailure{rf}}
 	for _, line := range strings.Split(a.String(), "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "stopped at "); ok {
 			if i := strings.Index(rest, "  with "); i >= 0 {
@@ -167,7 +167,7 @@ func TestWhyNot_Denied(t *testing.T) {
 // inheritance chain behind it.
 func TestWhyNot_RecursionTerminates(t *testing.T) {
 	t.Parallel()
-	facts := []datalog.Fact{fact("role", "tok", "r0")}
+	facts := []tarski.Fact{fact("role", "tok", "r0")}
 	for i := 0; i < 12; i++ {
 		facts = append(facts, fact("inherits", fmt.Sprint("r", i), fmt.Sprint("r", i+1)))
 	}
@@ -184,21 +184,21 @@ func TestWhyNot_RecursionTerminates(t *testing.T) {
 // 6. A walk wider than the step limit stops, says so, and still returns what it found.
 func TestWhyNot_StepLimit(t *testing.T) {
 	t.Parallel()
-	schema := datalog.Schema{Arities: map[string]int{"big": 1, "tag": 1}}
-	var facts []datalog.Fact
+	schema := tarski.Schema{Arities: map[string]int{"big": 1, "tag": 1}}
+	var facts []tarski.Fact
 	for i := 0; i < 45; i++ {
-		facts = append(facts, datalog.Fact{Relation: "big", Tuple: tuple(fmt.Sprint("n", i))})
+		facts = append(facts, tarski.Fact{Relation: "big", Tuple: tuple(fmt.Sprint("n", i))})
 	}
-	facts = append(facts, datalog.Fact{Relation: "tag", Tuple: tuple("t")})
-	plan, err := datalog.Compile(schema, parse(t, `z(X) :- big(A), big(B), big(C), tag(X), X = "never".`))
+	facts = append(facts, tarski.Fact{Relation: "tag", Tuple: tuple("t")})
+	plan, err := tarski.Compile(schema, parse(t, `z(X) :- big(A), big(B), big(C), tag(X), X = "never".`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	base, err := datalog.NewBase(schema, facts...)
+	base, err := tarski.NewBase(schema, facts...)
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{Proofs: true})
+	res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestWhyNot_Refusals(t *testing.T) {
 	res := rbacResult(t, fact("role", "tok", "reader"))
 	for name, c := range map[string]struct {
 		rel string
-		tup datalog.Tuple
+		tup tarski.Tuple
 	}{
 		"present":        {"holds", tuple("tok", "reader")},
 		"unknown":        {"nothing", tuple("a")},
@@ -238,8 +238,8 @@ func TestWhyNot_Refusals(t *testing.T) {
 			t.Errorf("%s: WhyNot was ok", name)
 		}
 	}
-	plan, _ := datalog.Compile(testSchema, parse(t, `n(X) :- node(X).`))
-	off, err := datalog.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), datalog.Options{})
+	plan, _ := tarski.Compile(testSchema, parse(t, `n(X) :- node(X).`))
+	off, err := tarski.Evaluate(context.Background(), plan, newBase(t, fact("node", "a")), tarski.Options{})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -277,24 +277,24 @@ func TestWhyNot_ConcurrentOverOneResult(t *testing.T) {
 // head that cannot be one atom with it is no candidate, a head p(A, B) walks its body
 // with B held to A, and a head p(Y, "a") walks with Y bound to "a".
 func TestWhyNot_RepeatedGoalVariable(t *testing.T) {
-	schema := datalog.Schema{Arities: map[string]int{"edge": 2}}
-	eval := func(text string) datalog.Result {
+	schema := tarski.Schema{Arities: map[string]int{"edge": 2}}
+	eval := func(text string) tarski.Result {
 		t.Helper()
-		plan, err := datalog.Compile(schema, parse(t, text))
+		plan, err := tarski.Compile(schema, parse(t, text))
 		if err != nil {
 			t.Fatalf("Compile: %v", err)
 		}
-		base, err := datalog.NewBase(schema, fact("edge", "a", "b"), fact("edge", "b", "a"))
+		base, err := tarski.NewBase(schema, fact("edge", "a", "b"), fact("edge", "b", "a"))
 		if err != nil {
 			t.Fatalf("NewBase: %v", err)
 		}
-		res, err := datalog.Evaluate(context.Background(), plan, base, datalog.Options{Proofs: true})
+		res, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true})
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
 		return res
 	}
-	child := func(res datalog.Result) datalog.Absence {
+	child := func(res tarski.Result) tarski.Absence {
 		t.Helper()
 		a, ok := res.WhyNot("q", tuple("missing"), 0)
 		if !ok {

@@ -1,4 +1,4 @@
-package datalog_test
+package tarski_test
 
 import (
 	"context"
@@ -10,15 +10,15 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mattjoyce/shearline/datalog"
+	"github.com/mattjoyce/tarski"
 )
 
 // testSchema is a small graph: edge/2 between nodes, node/1, score/2 of a node, and
 // flag/2. node refuses a constant that starts with "!", to show a schema check runs.
-var testSchema = datalog.Schema{
+var testSchema = tarski.Schema{
 	Arities: map[string]int{"edge": 2, "node": 1, "score": 2, "flag": 2},
-	Checks: map[string]func(datalog.Atom) error{
-		"node": func(a datalog.Atom) error {
+	Checks: map[string]func(tarski.Atom) error{
+		"node": func(a tarski.Atom) error {
 			if !a.Args[0].IsVar() && strings.HasPrefix(a.Args[0].Const.Text(), "!") {
 				return fmt.Errorf("node %s: a node name does not start with !", a.Args[0].Const.Text())
 			}
@@ -28,37 +28,37 @@ var testSchema = datalog.Schema{
 }
 
 // fact builds a Fact from Go values: a string, an int or a bool for each argument.
-func fact(relation string, args ...any) datalog.Fact {
-	t := make(datalog.Tuple, len(args))
+func fact(relation string, args ...any) tarski.Fact {
+	t := make(tarski.Tuple, len(args))
 	for i, a := range args {
 		switch v := a.(type) {
 		case string:
-			t[i] = datalog.String(v)
+			t[i] = tarski.String(v)
 		case int:
-			t[i], _ = datalog.Number(strconv.Itoa(v))
+			t[i], _ = tarski.Number(strconv.Itoa(v))
 		case float64:
-			t[i], _ = datalog.Number(strconv.FormatFloat(v, 'f', -1, 64))
+			t[i], _ = tarski.Number(strconv.FormatFloat(v, 'f', -1, 64))
 		case bool:
-			t[i] = datalog.Bool(v)
+			t[i] = tarski.Bool(v)
 		default:
 			panic(fmt.Sprintf("fact: unsupported %T", a))
 		}
 	}
-	return datalog.Fact{Relation: relation, Tuple: t}
+	return tarski.Fact{Relation: relation, Tuple: t}
 }
 
-func newBase(t *testing.T, facts ...datalog.Fact) datalog.Base {
+func newBase(t *testing.T, facts ...tarski.Fact) tarski.Base {
 	t.Helper()
-	b, err := datalog.NewBase(testSchema, facts...)
+	b, err := tarski.NewBase(testSchema, facts...)
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
 	return b
 }
 
-func parse(t *testing.T, text string) datalog.Program {
+func parse(t *testing.T, text string) tarski.Program {
 	t.Helper()
-	p, err := datalog.Parse(text)
+	p, err := tarski.Parse(text)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -66,33 +66,33 @@ func parse(t *testing.T, text string) datalog.Program {
 }
 
 // run compiles text over the test schema, evaluates it over facts and returns relation.
-func run(t *testing.T, facts []datalog.Fact, text, relation string) datalog.Answer {
+func run(t *testing.T, facts []tarski.Fact, text, relation string) tarski.Answer {
 	t.Helper()
-	ans, err := tryRun(newBase(t, facts...), text, relation, datalog.Options{})
+	ans, err := tryRun(newBase(t, facts...), text, relation, tarski.Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	return ans
 }
 
-func tryRun(base datalog.Base, text, relation string, opts datalog.Options) (datalog.Answer, error) {
-	prog, err := datalog.Parse(text)
+func tryRun(base tarski.Base, text, relation string, opts tarski.Options) (tarski.Answer, error) {
+	prog, err := tarski.Parse(text)
 	if err != nil {
-		return datalog.Answer{}, err
+		return tarski.Answer{}, err
 	}
-	plan, err := datalog.Compile(testSchema, prog)
+	plan, err := tarski.Compile(testSchema, prog)
 	if err != nil {
-		return datalog.Answer{}, err
+		return tarski.Answer{}, err
 	}
-	res, err := datalog.Evaluate(context.Background(), plan, base, opts)
+	res, err := tarski.Evaluate(context.Background(), plan, base, opts)
 	if err != nil {
-		return datalog.Answer{}, err
+		return tarski.Answer{}, err
 	}
 	return res.Relation(relation)
 }
 
 // rows renders an answer as one string per tuple, for comparing against a table.
-func rows(a datalog.Answer) []string {
+func rows(a tarski.Answer) []string {
 	out := make([]string, 0, a.Len())
 	for _, tup := range a.Tuples() {
 		parts := make([]string, len(tup))
@@ -126,7 +126,7 @@ func TestNewBase_HoldsFacts(t *testing.T) {
 			t.Errorf("Len(%s) = %d, want %d", rel, got, want)
 		}
 	}
-	if got := (datalog.Base{}).Len("node"); got != 0 {
+	if got := (tarski.Base{}).Len("node"); got != 0 {
 		t.Errorf("the zero Base holds %d nodes, want 0", got)
 	}
 }
@@ -136,22 +136,22 @@ func TestNewBase_Refuses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name   string
-		schema datalog.Schema
-		facts  []datalog.Fact
+		schema tarski.Schema
+		facts  []tarski.Fact
 		want   string
 	}{
-		{"unknown relation", testSchema, []datalog.Fact{fact("nothing", "a")}, "a fact of nothing, which the schema does not have"},
-		{"wrong arity", testSchema, []datalog.Fact{fact("edge", "a")}, "edge has 1 arguments, but edge is edge/2"},
-		{"empty fact", testSchema, []datalog.Fact{{Relation: "node"}}, "node has 0 arguments"},
-		{"check refuses a fact", testSchema, []datalog.Fact{fact("node", "ok"), fact("node", "!bad")}, "a fact of node: node !bad: a node name does not start with !"},
-		{"zero arity relation", datalog.Schema{Arities: map[string]int{"flag": 0}}, nil, "needs at least one argument"},
-		{"check without relation", datalog.Schema{Arities: map[string]int{"a": 1}, Checks: map[string]func(datalog.Atom) error{"b": nil}}, nil, "a check for b"},
+		{"unknown relation", testSchema, []tarski.Fact{fact("nothing", "a")}, "a fact of nothing, which the schema does not have"},
+		{"wrong arity", testSchema, []tarski.Fact{fact("edge", "a")}, "edge has 1 arguments, but edge is edge/2"},
+		{"empty fact", testSchema, []tarski.Fact{{Relation: "node"}}, "node has 0 arguments"},
+		{"check refuses a fact", testSchema, []tarski.Fact{fact("node", "ok"), fact("node", "!bad")}, "a fact of node: node !bad: a node name does not start with !"},
+		{"zero arity relation", tarski.Schema{Arities: map[string]int{"flag": 0}}, nil, "needs at least one argument"},
+		{"check without relation", tarski.Schema{Arities: map[string]int{"a": 1}, Checks: map[string]func(tarski.Atom) error{"b": nil}}, nil, "a check for b"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := datalog.NewBase(c.schema, c.facts...)
-			if !errors.Is(err, datalog.ErrInvalid) || !strings.Contains(err.Error(), c.want) {
+			_, err := tarski.NewBase(c.schema, c.facts...)
+			if !errors.Is(err, tarski.ErrInvalid) || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("NewBase = %v, want ErrInvalid containing %q", err, c.want)
 			}
 		})
@@ -163,15 +163,15 @@ func TestNewBase_CopiesTuples(t *testing.T) {
 	t.Parallel()
 	f := fact("edge", "a", "b")
 	b := newBase(t, f)
-	f.Tuple[1] = datalog.String("z")
+	f.Tuple[1] = tarski.String("z")
 	if got := rows(run2(t, b, `e(X, Y) :- edge(X, Y).`, "e")); !same(got, []string{"a b"}) {
 		t.Errorf("edge = %v, want [a b]", got)
 	}
 }
 
-func run2(t *testing.T, b datalog.Base, text, relation string) datalog.Answer {
+func run2(t *testing.T, b tarski.Base, text, relation string) tarski.Answer {
 	t.Helper()
-	ans, err := tryRun(b, text, relation, datalog.Options{})
+	ans, err := tryRun(b, text, relation, tarski.Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestBase_With(t *testing.T) {
 	if want := []string{"a b", "a c", "b c"}; !same(got, want) {
 		t.Errorf("path = %v, want %v", got, want)
 	}
-	if _, err := standing.With(fact("edge", "a")); !errors.Is(err, datalog.ErrInvalid) {
+	if _, err := standing.With(fact("edge", "a")); !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("With a wrong-arity fact = %v, want ErrInvalid", err)
 	}
 	none, err := standing.With()
@@ -210,13 +210,13 @@ func TestBase_With(t *testing.T) {
 // none writes to a shared relation.
 func TestEvaluate_ConcurrentOverOneBase(t *testing.T) {
 	t.Parallel()
-	var facts []datalog.Fact
+	var facts []tarski.Fact
 	for i := 0; i < 30; i++ {
 		facts = append(facts, fact("edge", fmt.Sprint("n", i), fmt.Sprint("n", i+1)), fact("node", fmt.Sprint("n", i)))
 	}
 	base := newBase(t, facts...)
 	text := `path(X, Y) :- edge(X, Y). path(X, Z) :- path(X, Y), edge(Y, Z). dead(X) :- node(X), not edge(X, "n3"), path(X, "n20").`
-	want, err := tryRun(base, text, "path", datalog.Options{})
+	want, err := tryRun(base, text, "path", tarski.Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestEvaluate_ConcurrentOverOneBase(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if ans, err := tryRun(b, text, "path", datalog.Options{}); err == nil {
+			if ans, err := tryRun(b, text, "path", tarski.Options{}); err == nil {
 				hashes[i] = ans.Hash()
 			}
 		}()
@@ -248,16 +248,16 @@ func TestEvaluate_ConcurrentOverOneBase(t *testing.T) {
 // read as empty.
 func TestEvaluate_RefusesAForeignBase(t *testing.T) {
 	t.Parallel()
-	plan, err := datalog.Compile(testSchema, parse(t, `n(X) :- node(X).`))
+	plan, err := tarski.Compile(testSchema, parse(t, `n(X) :- node(X).`))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	other, err := datalog.NewBase(datalog.Schema{Arities: map[string]int{"node": 2, "edge": 2, "score": 2, "flag": 2}})
+	other, err := tarski.NewBase(tarski.Schema{Arities: map[string]int{"node": 2, "edge": 2, "score": 2, "flag": 2}})
 	if err != nil {
 		t.Fatalf("NewBase: %v", err)
 	}
-	for name, b := range map[string]datalog.Base{"zero": {}, "wrong arity": other} {
-		if _, err := datalog.Evaluate(context.Background(), plan, b, datalog.Options{}); !errors.Is(err, datalog.ErrInvalid) {
+	for name, b := range map[string]tarski.Base{"zero": {}, "wrong arity": other} {
+		if _, err := tarski.Evaluate(context.Background(), plan, b, tarski.Options{}); !errors.Is(err, tarski.ErrInvalid) {
 			t.Errorf("%s base: Evaluate = %v, want ErrInvalid", name, err)
 		}
 	}
@@ -268,7 +268,7 @@ func TestEvaluate_RefusesAForeignBase(t *testing.T) {
 func TestBase_WithRunsTheChecks(t *testing.T) {
 	t.Parallel()
 	standing := newBase(t, fact("node", "a"))
-	if _, err := standing.With(fact("node", "!late")); !errors.Is(err, datalog.ErrInvalid) {
+	if _, err := standing.With(fact("node", "!late")); !errors.Is(err, tarski.ErrInvalid) {
 		t.Errorf("With a fact the check refuses = %v, want ErrInvalid", err)
 	}
 	if _, err := standing.With(fact("node", "fine")); err != nil {
@@ -291,7 +291,7 @@ func TestBase_WithEqualsNewBaseOverTheUnion(t *testing.T) {
 		top(X, S) :- score(X, S), S >= 2, not flag(X, true).`
 	relations := []string{"edge", "node", "score", "flag"}
 	name := func() string { return fmt.Sprint("n", rng.IntN(6)) }
-	random := func() datalog.Fact {
+	random := func() tarski.Fact {
 		switch rel := relations[rng.IntN(len(relations))]; rel {
 		case "edge":
 			return fact(rel, name(), name())
@@ -304,7 +304,7 @@ func TestBase_WithEqualsNewBaseOverTheUnion(t *testing.T) {
 		}
 	}
 	for i := 0; i < 200; i++ {
-		var standing, first, second []datalog.Fact
+		var standing, first, second []tarski.Fact
 		for range rng.IntN(25) {
 			standing = append(standing, random())
 		}
@@ -324,15 +324,15 @@ func TestBase_WithEqualsNewBaseOverTheUnion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("iteration %d: With: %v", i, err)
 		}
-		union := newBase(t, append(append(append([]datalog.Fact{}, standing...), first...), second...)...)
+		union := newBase(t, append(append(append([]tarski.Fact{}, standing...), first...), second...)...)
 		for _, rel := range relations {
 			if extended.Len(rel) != union.Len(rel) {
 				t.Fatalf("iteration %d: %s holds %d tuples extended, %d over the union", i, rel, extended.Len(rel), union.Len(rel))
 			}
 		}
 		for _, rel := range []string{"reach", "lone", "top"} {
-			a, errA := tryRun(extended, text, rel, datalog.Options{})
-			b, errB := tryRun(union, text, rel, datalog.Options{})
+			a, errA := tryRun(extended, text, rel, tarski.Options{})
+			b, errB := tryRun(union, text, rel, tarski.Options{})
 			if errA != nil || errB != nil || a.Hash() != b.Hash() {
 				t.Fatalf("iteration %d: %s answers differ: %v %v, %s vs %s", i, rel, errA, errB, a.Hash(), b.Hash())
 			}

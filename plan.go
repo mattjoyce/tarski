@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ import (
 // used: an unknown relation, a wrong arity, an unsafe variable, a negation that
 // cannot be stratified, a rule over a base relation, a built-in where a relation
 // belongs, or an atom its relation's check refuses. Each message says what to change.
-var ErrInvalid = errors.New("datalog: invalid program")
+var ErrInvalid = errors.New("tarski: invalid program")
 
 // Plan is a validated, stratified program over a schema, ready to evaluate.
 type Plan struct {

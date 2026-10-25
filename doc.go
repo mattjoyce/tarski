@@ -1,4 +1,4 @@
-// Package datalog is a small Datalog evaluator for questions that must have the same
+// Package tarski is a small Datalog evaluator for questions that must have the same
 // answer every time: facts in, derived relations out, each derivation checkable.
 //
 // The language (Parse) is small: rules with named derived relations, stratified
@@ -26,4 +26,4 @@
 //
 // Nothing here reads a file or the network, keeps state between calls, or knows what
 // the relations mean. The package owns the evaluation; the caller owns the vocabulary.
-package datalog
+package tarski

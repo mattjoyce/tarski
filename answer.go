@@ -1,4 +1,4 @@
-package datalog
+package tarski
 
 import (
 	"crypto/sha256"
@@ -47,7 +47,7 @@ func sealed(name string, tuples []Tuple) (Answer, error) {
 		Tuples   []Tuple `json:"tuples"`
 	}{name, tuples})
 	if err != nil {
-		return Answer{}, fmt.Errorf("datalog: serialise answer: %w", err)
+		return Answer{}, fmt.Errorf("tarski: serialise answer: %w", err)
 	}
 	sum := sha256.Sum256(b)
 	return Answer{relation: name, tuples: tuples, bytes: b, hash: "sha256:" + hex.EncodeToString(sum[:])}, nil
