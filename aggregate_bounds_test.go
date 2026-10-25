@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -215,5 +216,47 @@ busy(G) :- grp(G), n(G, 5).`
 		if f := a.Rules[0].Failed; f.Atom != nil || f.Compare != nil || f.Aggregate != nil {
 			t.Errorf("WhyNot(n) claims the failing literal %+v; want none", f)
 		}
+	}
+}
+
+// TestAggregate_SumWorkCharged: folding a sum aligns every addend to the group's
+// width, so a few hundred witnesses of sixty-thousand-digit spread cost far more than
+// their join steps. The fold is charged to MaxSteps before it runs, so a small bound
+// stops it rather than the work escaping the bound (commit security review).
+func TestAggregate_SumWorkCharged(t *testing.T) {
+	schema := tarski.Schema{Arities: map[string]int{"v": 2}}
+	var facts []tarski.Fact
+	for i := range 200 {
+		lexeme := "1e60000"
+		if i%2 == 1 {
+			lexeme = strconv.Itoa(i)
+		}
+		n, err := tarski.Number(lexeme)
+		if err != nil {
+			t.Fatal(err)
+		}
+		facts = append(facts, tarski.Fact{Relation: "v", Tuple: tarski.Tuple{tarski.Int(int64(i)), n}})
+	}
+	base, err := tarski.NewBase(schema, facts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog, err := tarski.Parse("total(S) :- S = sum X : { v(_, X) }.\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := tarski.Compile(schema, prog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// The join visits about 200 tuples; the fold is 200 addends over 60001 digits.
+	_, err = tarski.Evaluate(ctx, plan, base, tarski.Options{MaxSteps: 10_000})
+	var tl *tarski.TooLarge
+	if !errors.As(err, &tl) || tl.Bound != tarski.BoundSteps {
+		t.Fatalf("Evaluate with MaxSteps 10000 = %v, want *TooLarge on BoundSteps", err)
+	}
+	if _, err := tarski.Evaluate(ctx, plan, base, tarski.Options{MaxSteps: 1_000_000}); err != nil {
+		t.Fatalf("Evaluate with room for the fold: %v", err)
 	}
 }

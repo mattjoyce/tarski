@@ -77,6 +77,24 @@ func (ev *evaluator) step(relation string) error {
 	return nil
 }
 
+// stepN charges n steps at once: work done outside a join that must still count against
+// MaxSteps, and that crosses a deadline check whenever step would have.
+func (ev *evaluator) stepN(relation string, n int) error {
+	if n <= 0 {
+		return nil
+	}
+	before := ev.steps
+	ev.steps += n
+	if ev.opts.MaxSteps > 0 && ev.steps > ev.opts.MaxSteps {
+		ev.over = &TooLarge{Bound: BoundSteps, Relation: relation, Tuples: ev.tuples, Bytes: ev.bytes, Steps: ev.steps, MaxSteps: ev.opts.MaxSteps}
+		return ev.over
+	}
+	if before/stepsPerDeadlineCheck != ev.steps/stepsPerDeadlineCheck {
+		return ev.deadline()
+	}
+	return nil
+}
+
 // deadline is the evaluation's error when its context is done. It is asked at entry,
 // before each rule is applied, every stepsPerDeadlineCheck-th join step inside a
 // rule, and before the result is returned: a rule that visits no tuple (a ground

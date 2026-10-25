@@ -102,6 +102,12 @@ func (ev *evaluator) aggValue(a *aggPlan, env map[string]Const) (aggValue, error
 	if err := ev.join(a.inner, 0, inner, nil, -1, func() { f.add(inner) }); err != nil {
 		return aggValue{}, err
 	}
+	if f.op == "sum" && f.mixed == nil {
+		// The fold aligns every addend to the group's width: charge it before doing it.
+		if err := ev.stepN(a.inner.Head.Name, sumWork(f.values)); err != nil {
+			return aggValue{}, err
+		}
+	}
 	v, err := f.value()
 	if err != nil {
 		var tl *TooLarge
