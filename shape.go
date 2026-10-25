@@ -37,7 +37,7 @@ func checkShape(programs []Program) error {
 		}
 		for j, r := range p.Rules {
 			if err := checkRuleShape(r); err != nil {
-				return fmt.Errorf("%w: %s, rule %d (line %d): %v", ErrInvalid, who, j+1, r.Line, err)
+				return fmt.Errorf("%w: %s, rule %d (line %d): %w", ErrInvalid, who, j+1, r.Line, err)
 			}
 		}
 	}
@@ -46,11 +46,11 @@ func checkShape(programs []Program) error {
 
 func checkRuleShape(r Rule) error {
 	if err := checkAtomShape(r.Head); err != nil {
-		return fmt.Errorf("the head: %v", err)
+		return fmt.Errorf("the head: %w", err)
 	}
 	for i, l := range r.Body {
 		if err := checkLiteralShape(l); err != nil {
-			return fmt.Errorf("body literal %d: %v", i+1, err)
+			return fmt.Errorf("body literal %d: %w", i+1, err)
 		}
 	}
 	return nil
@@ -89,7 +89,7 @@ func checkAtomShape(a Atom) error {
 	}
 	for i, t := range a.Args {
 		if err := checkTermShape(t); err != nil {
-			return fmt.Errorf("%s, argument %d: %v", a.Name, i+1, err)
+			return fmt.Errorf("%s, argument %d: %w", a.Name, i+1, err)
 		}
 	}
 	return nil

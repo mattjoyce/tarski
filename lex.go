@@ -239,8 +239,15 @@ func jsonRune(s string) (r rune, n int, ok bool) {
 		if len(s) < 4 {
 			return 0, false
 		}
-		v, err := strconv.ParseUint(s[:4], 16, 32)
-		return rune(v), err == nil
+		var v rune
+		for i := range 4 {
+			d := hexDigit(s[i])
+			if d < 0 {
+				return 0, false
+			}
+			v = v<<4 | d
+		}
+		return v, true
 	}
 	r, ok = hex4(s)
 	if !ok {
@@ -296,4 +303,17 @@ func isWord(s string) bool {
 		}
 	}
 	return true
+}
+
+// hexDigit is the value of one hexadecimal digit, or -1 for any other byte.
+func hexDigit(c byte) rune {
+	switch {
+	case '0' <= c && c <= '9':
+		return rune(c - '0')
+	case 'a' <= c && c <= 'f':
+		return rune(c-'a') + 10
+	case 'A' <= c && c <= 'F':
+		return rune(c-'A') + 10
+	}
+	return -1
 }

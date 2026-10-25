@@ -65,7 +65,7 @@ func (s RuleSet) Verify() error {
 	}
 	parsed, err := Parse(s.Program.Text)
 	if err != nil {
-		return fmt.Errorf("%w: rule set %s/%d: its text does not parse: %v", ErrInvalid, s.Name, s.Version, err)
+		return fmt.Errorf("%w: rule set %s/%d: its text does not parse: %w", ErrInvalid, s.Name, s.Version, err)
 	}
 	parsed.Name = fmt.Sprintf("%s/%d", s.Name, s.Version)
 	if !reflect.DeepEqual(parsed, s.Program) {

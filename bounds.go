@@ -40,4 +40,5 @@ func (e *TooLarge) Error() string {
 		"make a rule more selective or the base smaller", e.Tuples, e.MaxBytes, e.Relation)
 }
 
+// Is reports whether target is ErrTooLarge, so errors.Is(err, ErrTooLarge) holds for a *TooLarge.
 func (e *TooLarge) Is(target error) bool { return target == ErrTooLarge }
