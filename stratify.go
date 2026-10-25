@@ -9,7 +9,7 @@ import (
 // before a rule reads it: a relation's stratum is one above the highest it negates,
 // and no less than any it depends on positively. A cycle through a negation has no
 // such order and is refused.
-func stratify(rules []Rule, idb map[string]bool) ([][]rule, error) {
+func stratify(rules []Rule, idb map[string]bool, table builtinTable) ([][]rule, error) {
 	deps := dependencies(rules, idb)
 	comps := components(deps)
 	stratum := map[string]int{}
@@ -41,7 +41,7 @@ func stratify(rules []Rule, idb map[string]bool) ([][]rule, error) {
 			stratum[n] = level
 		}
 	}
-	return group(rules, stratum, idb), nil
+	return group(rules, stratum, idb, table), nil
 }
 
 type edge struct {
@@ -118,7 +118,7 @@ func components(deps map[string][]edge) [][]string {
 }
 
 // group orders each rule's body for evaluation and places it in its head's stratum.
-func group(rules []Rule, stratum map[string]int, idb map[string]bool) [][]rule {
+func group(rules []Rule, stratum map[string]int, idb map[string]bool, table builtinTable) [][]rule {
 	top := 0
 	for _, s := range stratum {
 		top = max(top, s)
@@ -126,7 +126,7 @@ func group(rules []Rule, stratum map[string]int, idb map[string]bool) [][]rule {
 	strata := make([][]rule, top+1)
 	for _, r := range rules {
 		s := stratum[r.Head.Name]
-		pr := rule{Rule: r, ordered: order(r.Body)}
+		pr := rule{Rule: r, ordered: order(r.Body, table)}
 		for i, l := range pr.ordered {
 			if l.Atom != nil && !l.Negated && idb[l.Atom.Name] && stratum[l.Atom.Name] == s {
 				pr.recursive = append(pr.recursive, i)
@@ -140,12 +140,12 @@ func group(rules []Rule, stratum map[string]int, idb map[string]bool) [][]rule {
 // order places each negation, comparison and built-in right after the positive atom
 // that binds its last variable, so a guard runs as soon as it can and never before it
 // may. Positive atoms keep the order written.
-func order(body []Literal) []Literal {
+func order(body []Literal, table builtinTable) []Literal {
 	var out []Literal
 	bound := map[string]bool{}
 	var pending []Literal
 	for _, l := range body {
-		if isGuard(l) {
+		if isGuard(l, table) {
 			pending = append(pending, l)
 		}
 	}
@@ -162,7 +162,7 @@ func order(body []Literal) []Literal {
 	}
 	flush()
 	for _, l := range body {
-		if isGuard(l) {
+		if isGuard(l, table) {
 			continue
 		}
 		out = append(out, l)
@@ -178,8 +178,8 @@ func order(body []Literal) []Literal {
 
 // isGuard reports whether a literal only tests the bindings made so far: a negation,
 // a comparison or a built-in.
-func isGuard(l Literal) bool {
-	return l.Atom == nil || l.Negated || isBuiltin(l.Atom.Name)
+func isGuard(l Literal, table builtinTable) bool {
+	return l.Atom == nil || l.Negated || table.has(l.Atom.Name)
 }
 
 func ready(l Literal, bound map[string]bool) bool {

@@ -12,24 +12,29 @@ import (
 // ErrInvalid is returned for a program or a fact that is well formed but cannot be
 // used: an unknown relation, a wrong arity, an unsafe variable, a negation that
 // cannot be stratified, a rule over a base relation, a built-in where a relation
-// belongs, or an atom its relation's check refuses. Each message says what to change.
+// belongs, an atom its relation's check refuses, a builtin declaration the engine
+// cannot use, or a consumer builtin that panicked during evaluation. Each message says
+// what to change.
 var ErrInvalid = errors.New("tarski: invalid program")
 
 // Plan is a validated, stratified program over a schema, ready to evaluate.
 type Plan struct {
-	strata  [][]rule
-	idb     map[string]bool
-	defined map[string]bool // the derived relations some rule has as its head
-	base    map[string]int  // the schema's relations and arities, which a Base must match
-	arity   map[string]int  // every relation, base and derived
+	strata   [][]rule
+	idb      map[string]bool
+	defined  map[string]bool // the derived relations some rule has as its head
+	base     map[string]int  // the schema's relations and arities, which a Base must match
+	arity    map[string]int  // every relation, base and derived
+	builtins builtinTable    // engine and consumer builtins, copied at Compile
 }
 
 // Schema names the base relations a base may hold and, per relation, an optional
 // compile-time check run on every atom (head or body) that names it. A check sees one
 // atom, so it can hold a constant to a shape; reachability is not its business.
+// Builtins declares the consumer's own guards beside the engine's (see Builtin).
 type Schema struct {
-	Arities map[string]int
-	Checks  map[string]func(Atom) error // nil map or nil entry: no check
+	Arities  map[string]int
+	Checks   map[string]func(Atom) error // nil map or nil entry: no check
+	Builtins map[string]Builtin          // nil map: the engine's builtins only
 }
 
 // rule is a Rule with its body in evaluation order: positive atoms as written, each
@@ -47,9 +52,10 @@ type rule struct {
 // a malformed one (see checkShape) is ErrInvalid. A relation declared and
 // defined nowhere is empty, not an error: that is how a rule set leaves a hook open.
 // Schema maps are copied before any check runs; check functions still own their
-// closure state and must provide stable results for stable inputs.
+// closure state and must provide stable results for stable inputs. The builtin table
+// is copied too, so changing Schema.Builtins after Compile changes nothing the plan does.
 func Compile(schema Schema, programs ...Program) (Plan, error) {
-	schema = Schema{Arities: maps.Clone(schema.Arities), Checks: maps.Clone(schema.Checks)}
+	schema = Schema{Arities: maps.Clone(schema.Arities), Checks: maps.Clone(schema.Checks), Builtins: maps.Clone(schema.Builtins)}
 	// The plan owns what it compiles: it works from copies, so the caller editing a
 	// Program afterwards changes nothing the plan derives. Shape is checked on the copy
 	// before anything walks it.
@@ -64,7 +70,8 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	if err := checkSchema(schema); err != nil {
 		return Plan{}, err
 	}
-	arities, idb, err := relations(schema, programs)
+	table := newBuiltinTable(schema.Builtins)
+	arities, idb, err := relations(schema, table, programs)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -77,7 +84,7 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	var rules []Rule
 	for _, p := range programs {
 		for _, r := range p.Rules {
-			if err := checkRule(r, arities, schema); err != nil {
+			if err := checkRule(r, arities, schema, table); err != nil {
 				return Plan{}, err
 			}
 			if p.Name != "" {
@@ -86,7 +93,7 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 			rules = append(rules, r)
 		}
 	}
-	strata, err := stratify(rules, idb)
+	strata, err := stratify(rules, idb, table)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -94,7 +101,7 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	for name, n := range schema.Arities {
 		base[name] = n
 	}
-	return Plan{strata: strata, idb: idb, defined: defined, base: base, arity: arities}, nil
+	return Plan{strata: strata, idb: idb, defined: defined, base: base, arity: arities, builtins: table}, nil
 }
 
 // Arity is the arity of a relation the plan knows, base or derived. ok is false for a
@@ -112,14 +119,14 @@ func (p Plan) Arity(name string) (int, bool) {
 func (p Plan) Defines(name string) bool { return p.defined[name] }
 
 // checkSchema refuses a schema that could not hold a relation: a name the lexer
-// would not read as one, a built-in's name, a non-positive arity, or a check for a
-// relation the schema does not have.
+// would not read as one, a built-in's name, a non-positive arity, a check for a
+// relation the schema does not have, or a builtin declaration checkBuiltins refuses.
 func checkSchema(schema Schema) error {
 	for name, n := range schema.Arities {
 		if !isName(name) {
 			return fmt.Errorf("%w: %q is not a relation name", ErrInvalid, name)
 		}
-		if _, ok := builtins[name]; ok {
+		if _, ok := engineBuiltins[name]; ok {
 			return fmt.Errorf("%w: %s is a built-in and cannot be a base relation", ErrInvalid, name)
 		}
 		if n < 1 {
@@ -131,12 +138,12 @@ func checkSchema(schema Schema) error {
 			return fmt.Errorf("%w: a check for %s, which the schema does not have", ErrInvalid, name)
 		}
 	}
-	return nil
+	return checkBuiltins(schema)
 }
 
 // relations collects every relation's arity: the schema's base relations, the
 // declarations, and the heads. One name, one arity.
-func relations(schema Schema, programs []Program) (arities map[string]int, idb map[string]bool, err error) {
+func relations(schema Schema, table builtinTable, programs []Program) (arities map[string]int, idb map[string]bool, err error) {
 	arities, idb = map[string]int{}, map[string]bool{}
 	for name, n := range schema.Arities {
 		arities[name] = n
@@ -150,7 +157,7 @@ func relations(schema Schema, programs []Program) (arities map[string]int, idb m
 	}
 	for _, p := range programs {
 		for name, n := range p.Declared {
-			if _, ok := builtins[name]; ok {
+			if table.has(name) {
 				return nil, nil, fmt.Errorf("%w: %s is a built-in and cannot be declared", ErrInvalid, name)
 			}
 			if schema.Arities[name] != 0 {
@@ -162,7 +169,7 @@ func relations(schema Schema, programs []Program) (arities map[string]int, idb m
 			idb[name] = true
 		}
 		for _, r := range p.Rules {
-			if _, ok := builtins[r.Head.Name]; ok {
+			if table.has(r.Head.Name) {
 				return nil, nil, fmt.Errorf("%w: line %d: %s is a built-in and cannot be the head of a rule", ErrInvalid, r.Line, r.Head.Name)
 			}
 			if schema.Arities[r.Head.Name] != 0 {
@@ -181,7 +188,7 @@ func relations(schema Schema, programs []Program) (arities map[string]int, idb m
 // checkRule holds one rule to the arities, to the schema's checks, and to safety:
 // every variable in the head, in a negated atom, in a comparison or in a built-in is
 // bound by a positive body atom. A built-in binds nothing, so it never counts as one.
-func checkRule(r Rule, arities map[string]int, schema Schema) error {
+func checkRule(r Rule, arities map[string]int, schema Schema, table builtinTable) error {
 	bound := map[string]bool{}
 	atoms := []*Atom{&r.Head}
 	for _, l := range r.Body {
@@ -189,7 +196,7 @@ func checkRule(r Rule, arities map[string]int, schema Schema) error {
 			continue
 		}
 		atoms = append(atoms, l.Atom)
-		if l.Negated || isBuiltin(l.Atom.Name) {
+		if l.Negated || table.has(l.Atom.Name) {
 			continue
 		}
 		for _, a := range l.Atom.Args {
@@ -199,7 +206,7 @@ func checkRule(r Rule, arities map[string]int, schema Schema) error {
 		}
 	}
 	for _, a := range atoms {
-		if err := checkAtom(*a, arities, schema); err != nil {
+		if err := checkAtom(*a, arities, schema, table); err != nil {
 			return fmt.Errorf("%w: line %d: %w", ErrInvalid, a.Line, err)
 		}
 	}
@@ -212,7 +219,7 @@ func checkRule(r Rule, arities map[string]int, schema Schema) error {
 		}
 	}
 	for _, l := range r.Body {
-		if err := checkGuard(l, bound); err != nil {
+		if err := checkGuard(l, bound, table); err != nil {
 			return err
 		}
 	}
@@ -222,7 +229,7 @@ func checkRule(r Rule, arities map[string]int, schema Schema) error {
 // checkGuard holds a negation, comparison or built-in to safety. A negated atom may
 // use _ for a position it does not care about; a built-in or comparison may not, since
 // it has nothing to test there.
-func checkGuard(l Literal, bound map[string]bool) error {
+func checkGuard(l Literal, bound map[string]bool, table builtinTable) error {
 	switch {
 	case l.Compare != nil:
 		for _, t := range []Term{l.Compare.Left, l.Compare.Right} {
@@ -233,7 +240,7 @@ func checkGuard(l Literal, bound map[string]bool) error {
 				return fmt.Errorf("%w: line %d: %s in a comparison is not bound by a positive body atom", ErrInvalid, l.Compare.Line, t.Var)
 			}
 		}
-	case l.Atom != nil && isBuiltin(l.Atom.Name):
+	case l.Atom != nil && table.has(l.Atom.Name):
 		for _, t := range l.Atom.Args {
 			if t.Var == "_" {
 				return fmt.Errorf("%w: line %d: _ in %s tests nothing", ErrInvalid, l.Atom.Line, l.Atom.Name)
@@ -254,13 +261,10 @@ func checkGuard(l Literal, bound map[string]bool) error {
 }
 
 // checkAtom holds an atom to its relation's arity, then to the schema's check for it.
-// A built-in has its own arity and no check.
-func checkAtom(a Atom, arities map[string]int, schema Schema) error {
-	if b, ok := builtins[a.Name]; ok {
-		if b.arity != len(a.Args) {
-			return fmt.Errorf("%s has %d arguments, but %s is %s/%d", a.Name, len(a.Args), a.Name, a.Name, b.arity)
-		}
-		return nil
+// A built-in has its own arity and, if it declares one, its own Check.
+func checkAtom(a Atom, arities map[string]int, schema Schema, table builtinTable) error {
+	if b, ok := table[a.Name]; ok {
+		return checkBuiltinAtom(a, b)
 	}
 	n, ok := arities[a.Name]
 	if !ok {

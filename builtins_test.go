@@ -8,17 +8,13 @@ import (
 )
 
 // The hooks are proved with a fake, so they do not depend on what the real built-ins
-// do. This test registers shorter(A, B), true when A is shorter than B, to prove every
-// hook: where it is refused, how it is ordered, and how it is evaluated. It is not parallel and removes the fake when it
-// ends: Go runs the parallel tests only after every sequential one has finished, so
-// none reads the map while it is changed.
+// do. This test declares shorter(A, B), true when A is shorter than B, through
+// Schema.Builtins to prove every hook: where it is refused, how it is ordered, and how
+// it is evaluated. A declared builtin lives in the plan, not in a package map, so the
+// test may run in parallel.
 func TestBuiltins_Hooks(t *testing.T) {
-	builtins["shorter"] = builtin{arity: 2, eval: func(args []Const) bool {
-		return len(args[0].Text()) < len(args[1].Text())
-	}}
-	defer delete(builtins, "shorter")
-
-	schema := Schema{Arities: map[string]int{"word": 1, "pair": 2}}
+	t.Parallel()
+	schema := Schema{Arities: map[string]int{"word": 1, "pair": 2}, Builtins: map[string]Builtin{"shorter": shorter}}
 	refused := []struct{ name, text, want string }{
 		{"in a head", `shorter(X, Y) :- pair(X, Y).`, "shorter is a built-in and cannot be the head of a rule"},
 		{"declared", `shorter/2.`, "shorter is a built-in and cannot be declared"},
@@ -34,10 +30,10 @@ func TestBuiltins_Hooks(t *testing.T) {
 			t.Errorf("%s: Compile = %v, want ErrInvalid containing %q", c.name, err, c.want)
 		}
 	}
-	if _, err := Compile(Schema{Arities: map[string]int{"shorter": 2}}); !errors.Is(err, ErrInvalid) {
+	if _, err := Compile(Schema{Arities: map[string]int{"shorter": 2}, Builtins: schema.Builtins}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("a built-in in the schema: Compile = %v, want ErrInvalid", err)
 	}
-	if _, err := NewBase(Schema{Arities: map[string]int{"shorter": 2}}); !errors.Is(err, ErrInvalid) {
+	if _, err := NewBase(Schema{Arities: map[string]int{"shorter": 2}, Builtins: schema.Builtins}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("a built-in in the schema: NewBase = %v, want ErrInvalid", err)
 	}
 
@@ -257,4 +253,14 @@ func TestBuiltins_NegatedNonStringHolds(t *testing.T) {
 	if len(got) != 1 || !got["1|1"] {
 		t.Errorf("not prefix derived %v, want only the number-subject row 1|1", got)
 	}
+}
+
+// shorter(A, B) is true when A's text is shorter than B's: a fake builtin with no
+// meaning of its own, declared the way a consumer would declare one.
+var shorter = Builtin{
+	Args: []BuiltinArg{{Name: "A"}, {Name: "B"}},
+	Doc:  "true when A's text is shorter than B's",
+	Holds: func(args []Const) bool {
+		return len(args[0].Text()) < len(args[1].Text())
+	},
 }

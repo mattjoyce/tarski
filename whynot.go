@@ -70,8 +70,9 @@ type RuleFailure struct {
 
 // WhyNot explains a tuple's absence. ok is false when t is in the result (ask Proof),
 // when the relation or the tuple's arity is not the plan's, or when the evaluation ran
-// without Options.Proofs. maxDepth bounds the recursion into Because; 0 means the
-// engine's default.
+// without Options.Proofs, or when a consumer builtin panicked while the rules were
+// walked (the panic does not escape). maxDepth bounds the recursion into Because; 0
+// means the engine's default.
 func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) {
 	rel, found := r.relations[name]
 	arity, known := r.plan.Arity(name)
@@ -87,7 +88,11 @@ func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) 
 	}
 	x := &explainer{r: r, b: &builder{r: r, proofs: map[string]Proof{}, rules: map[*Rule]*Rule{}}, seen: map[string]bool{}}
 	x.seen[goalKey(name, goal)] = true
-	return x.absence(name, goal, maxDepth), true
+	a = x.absence(name, goal, maxDepth)
+	if x.failed != nil {
+		return Absence{}, false
+	}
+	return a, true
 }
 
 // explainer is one WhyNot call's state: the rule copies shared with Proof's builder,
@@ -98,6 +103,7 @@ type explainer struct {
 	seen      map[string]bool
 	steps     int
 	exhausted bool
+	failed    error // a builtin panicked; the walk stops and WhyNot explains nothing
 }
 
 // spend charges one candidate against the step limit and reports whether it is gone.
@@ -183,7 +189,7 @@ func (x *explainer) failure(ru *rule, goal []Term, depth int) (rf RuleFailure, c
 	case w.best.blocked != nil:
 		p := x.b.build(w.best.lit.Atom.Name, w.best.blocked)
 		rf.Blocked = &p
-	case w.best.lit.Atom != nil && !w.best.lit.Negated && !isBuiltin(w.best.lit.Atom.Name):
+	case w.best.lit.Atom != nil && !w.best.lit.Negated && !x.r.plan.builtins.has(w.best.lit.Atom.Name):
 		cut = x.because(&rf, w.best.lit.Atom, w.best.env, depth)
 	}
 	return rf, cut, true
@@ -253,8 +259,13 @@ func (w *walker) walk(i int, env map[string]Const) bool {
 	}
 	l := w.body[i]
 	switch {
-	case l.Compare != nil || isBuiltin(l.Atom.Name):
-		if guardHolds(l, env) {
+	case l.Compare != nil || w.x.r.plan.builtins.has(l.Atom.Name):
+		ok, err := w.x.r.plan.builtins.guardHolds(l, env)
+		if err != nil {
+			w.x.failed, w.x.exhausted = err, true
+			return false
+		}
+		if ok {
 			return w.walk(i+1, env)
 		}
 		w.record(i, env, l, nil)
