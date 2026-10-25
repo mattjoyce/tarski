@@ -13,8 +13,8 @@ import (
 // used: an unknown relation, a wrong arity, an unsafe variable, a negation that
 // cannot be stratified, a rule over a base relation, a built-in where a relation
 // belongs, an atom its relation's check refuses, a builtin declaration the engine
-// cannot use, or a consumer builtin that panicked during evaluation. Each message says
-// what to change.
+// cannot use, an aggregate (which this version parses but does not evaluate), or a
+// consumer builtin that panicked during evaluation. Each message says what to change.
 var ErrInvalid = errors.New("tarski: invalid program")
 
 // Plan is a validated, stratified program over a schema, ready to evaluate.
@@ -65,6 +65,9 @@ func Compile(schema Schema, programs ...Program) (Plan, error) {
 	}
 	programs = owned
 	if err := checkShape(programs); err != nil {
+		return Plan{}, err
+	}
+	if err := refuseAggregates(programs); err != nil {
 		return Plan{}, err
 	}
 	if err := checkSchema(schema); err != nil {

@@ -2,6 +2,7 @@ package tarski_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -20,6 +21,10 @@ func FuzzParseCompileEvaluate(f *testing.F) {
 		`out("x").`, `out(X) :- input(X).`, `out(X) :- input(X), not out(X).`, `out/1.`, "\xff", "",
 		`out(X) :- input(X), X >= "a", X != "b".`, `out("é日本é\x00").`, "out(\"\xff\").", `out("\xff").`,
 		`a(X) :- input(X). b(X) :- a(X), not c(X). c(X) :- b(X).`, `out(1e999).`, `out(-0).`,
+		`out(N) :- N = count : { input(_) }.`, `out(X, S) :- input(X), S = sum V : { input(V), not out(V, _), V > 1 }.`,
+		`out(X, L) :- input(X), L = max Y : { input(Y), prefix(X, Y) }, M = min Y : { input(Y) }.`,
+		`count(X) :- input(X). sum(N) :- N = count : { count(_) }.`, `out(N) :- N = avg X : { input(X) }.`,
+		`out(N) :- N = count : { M = count : { input(_) } }.`, `out(N) :- N = count : { }.`,
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -35,6 +40,11 @@ func FuzzParseCompileEvaluate(f *testing.F) {
 		checkStringsAreText(t, p)
 		schema := tarski.Schema{Arities: map[string]int{"input": 1}}
 		plan, err := tarski.Compile(schema, p)
+		// What the parser makes passes the shape check, so a parsed aggregate reaches the
+		// inert refusal and is never reported as malformed.
+		if holdsAggregate(p) && (err == nil || !strings.Contains(err.Error(), "aggregates are not evaluated yet")) {
+			t.Fatalf("Compile of a parsed aggregate = %v, want the inert refusal", err)
+		}
 		if err != nil {
 			return
 		}
@@ -59,17 +69,36 @@ func checkStringsAreText(t *testing.T, p tarski.Program) {
 			}
 		}
 	}
-	for _, r := range p.Rules {
-		check(r.Head.Args)
-		for _, l := range r.Body {
+	var body func([]tarski.Literal)
+	body = func(ls []tarski.Literal) {
+		for _, l := range ls {
 			if l.Atom != nil {
 				check(l.Atom.Args)
 			}
 			if l.Compare != nil {
 				check([]tarski.Term{l.Compare.Left, l.Compare.Right})
 			}
+			if l.Aggregate != nil {
+				body(l.Aggregate.Body)
+			}
 		}
 	}
+	for _, r := range p.Rules {
+		check(r.Head.Args)
+		body(r.Body)
+	}
+}
+
+// holdsAggregate reports whether any rule of p has an aggregate literal.
+func holdsAggregate(p tarski.Program) bool {
+	for _, r := range p.Rules {
+		for _, l := range r.Body {
+			if l.Aggregate != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // FuzzTransitiveClosure checks reach/2 against Floyd-Warshall on graphs of up to eight

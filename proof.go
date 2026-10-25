@@ -89,6 +89,16 @@ func copyLiteral(l Literal) Literal {
 		cmp := *l.Compare // Terms hold no pointers or slices
 		out.Compare = &cmp
 	}
+	if l.Aggregate != nil {
+		agg := *l.Aggregate // Result and Target are Terms; only the body needs copying
+		if l.Aggregate.Body != nil {
+			agg.Body = make([]Literal, len(l.Aggregate.Body))
+			for i, inner := range l.Aggregate.Body {
+				agg.Body[i] = copyLiteral(inner)
+			}
+		}
+		out.Aggregate = &agg
+	}
 	return out
 }
 
