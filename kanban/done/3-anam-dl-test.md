@@ -13,3 +13,6 @@ Copy `anam.dl` from anam origin/master into `testdata/`, with its source commit 
 
 ## Acceptance
 - `anam_test.go` passes; README and AGENTS.md name it.
+
+## Narrative
+- 2026-10-25: `testdata/anam.dl` is Anam's rules/anam.dl byte for byte from anam origin/master 45e4a67 (rule set v2, with in_force/2). `anam_test.go` compiles it as rule set anam/2 (NewRuleSet and Verify pass), with a query modelled on Anam's QUERY.md: the regimen in force at each reading, and the note on a reading. It checks exact answers, a proof and a why-not. Passed first run on the engine as cut, so no engine change was needed. Refresh the copy when Anam's rule set moves. (by datalog-module)
