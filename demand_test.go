@@ -90,13 +90,6 @@ func TestDemand_Refuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The demand on r0 comes from r1, which r1's rule reads before it negates r0: the
-	// rewrite's cycle m?r0?bb -> r1 -> not r0 -> m?r0?bb runs through a negation.
-	unstrat, err := tarski.Compile(tarski.Schema{Arities: map[string]int{"e": 2}}, parse(t,
-		`r0(X, Y) :- e(X, Y). r1(X, Y) :- e(Y, X). r1(X, Y) :- r1(X, Z), e(Z, Y), not r0(X, Y).`))
-	if err != nil {
-		t.Fatal(err)
-	}
 	cases := []struct {
 		name                string
 		plan                tarski.Plan
@@ -109,7 +102,6 @@ func TestDemand_Refuses(t *testing.T) {
 		{"adornment letter", plan, "allow", "bbx", "adornment"},
 		{"already for a goal", demand, "allow", "bbb", "already compiled"},
 		{"aggregates", agg, "n", "bf", "not yet supported"},
-		{"rewrite unstratified", unstrat, "r1", "bf", "not yet supported"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

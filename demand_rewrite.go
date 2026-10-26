@@ -1,7 +1,6 @@
 package tarski
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -35,69 +34,84 @@ func hiddenName(a adorned) string { return "m?" + a.relation + "?" + a.adornment
 // makes each one's rules: per source rule a copy led by the demand literal, and per
 // derived literal in it a demand rule. The order is a function of the plan and the goal
 // shape (D5), since the worklist is walked in order and source rules in plan order.
+// dropped holds the relations whose demand the fallback dropped (demand_fallback.go):
+// each is adorned all-free wherever it is reached, so it is derived whole. count is the
+// adornments reached per relation, and over the first relation whose count passed
+// maxAdornments, which ends the walk.
 type rewriter struct {
-	src    Plan
-	rules  map[string][]*rule // source rules by head, in plan order
-	queue  []adorned
-	seen   map[adorned]bool
-	out    []rule
-	hidden map[string]string
+	src     Plan
+	rules   map[string][]*rule // source rules by head, in plan order
+	dropped map[string]bool
+	queue   []adorned
+	seen    map[adorned]bool
+	count   map[string]int
+	over    string
+	out     []rule
+	hidden  map[string]string
 }
 
-// rewrite is the demand plan for goals over relation with adornment: the rewritten
-// rules, stratified and placed. A rewrite stratify refuses is refused here (lifting
-// that is a later slice: drop demand per relation until it stratifies).
-func (p Plan) rewrite(relation, adornment string) (*demandPlan, error) {
-	w := &rewriter{src: p, rules: map[string][]*rule{}, seen: map[adorned]bool{}, hidden: map[string]string{}}
+// newRewriter is a rewriter over p's rules with dropped's relations derived whole.
+func (p Plan) newRewriter(dropped map[string]bool) *rewriter {
+	w := &rewriter{src: p, rules: map[string][]*rule{}, dropped: dropped, seen: map[adorned]bool{},
+		count: map[string]int{}, hidden: map[string]string{}}
 	for s := range p.strata {
 		for i := range p.strata[s] {
 			r := &p.strata[s][i]
 			w.rules[r.Head.Name] = append(w.rules[r.Head.Name], r)
 		}
 	}
-	goal := adorned{relation, adornment}
+	return w
+}
+
+// walk rewrites every adornment reached from goal, and stops early when a relation
+// passes maxAdornments (w.over).
+func (w *rewriter) walk(goal adorned) {
 	w.push(goal)
-	for i := 0; i < len(w.queue); i++ {
+	for i := 0; i < len(w.queue) && w.over == ""; i++ {
 		a := w.queue[i]
 		for _, sr := range w.rules[a.relation] {
 			w.copyRule(sr, a)
 		}
 	}
-	idb := make(map[string]bool, len(p.idb)+len(w.hidden))
-	for name := range p.idb {
+}
+
+// program is the rewritten rules as written rules, with the derived relations they
+// define: the source's and the hidden demand relations.
+func (w *rewriter) program() (plain []Rule, idb map[string]bool) {
+	idb = make(map[string]bool, len(w.src.idb)+len(w.hidden))
+	for name := range w.src.idb {
 		idb[name] = true
 	}
 	for name := range w.hidden {
 		idb[name] = true
 	}
-	plain := make([]Rule, len(w.out))
+	plain = make([]Rule, len(w.out))
 	for i, r := range w.out {
 		plain[i] = r.Rule
 	}
-	stratum, err := levels(plain, idb)
-	if err != nil {
-		return nil, fmt.Errorf("%w: Demand(%q, %q): demand for this plan is not yet supported, since its rewrite cannot be stratified (%w); "+
-			"evaluate the plan without a goal", ErrInvalid, relation, adornment, err)
-	}
-	d := &demandPlan{relation: relation, adornment: adornment, strata: place(w.out, stratum, idb), idb: idb, hidden: w.hidden}
-	if strings.Contains(adornment, "b") {
-		d.seed = hiddenName(goal)
-	}
-	return d, nil
+	return plain, idb
 }
 
-// push puts an adornment on the worklist once, and names its demand relation when it
-// binds something. The all-free adornment means the whole relation: it has no demand
-// relation, and its copies are the source rules.
-func (w *rewriter) push(a adorned) {
+// push adorns a, all-free when its relation's demand is dropped, and puts it on the
+// worklist once, naming its demand relation when it binds something. The all-free
+// adornment means the whole relation: it has no demand relation, and its copies are the
+// source rules. It returns the adornment as pushed.
+func (w *rewriter) push(a adorned) adorned {
+	if w.dropped[a.relation] {
+		a.adornment = strings.Repeat("f", len(a.adornment))
+	}
 	if w.seen[a] {
-		return
+		return a
 	}
 	w.seen[a] = true
 	w.queue = append(w.queue, a)
+	if w.count[a.relation]++; w.count[a.relation] > maxAdornments && w.over == "" {
+		w.over = a.relation
+	}
 	if strings.Contains(a.adornment, "b") {
 		w.hidden[hiddenName(a)] = a.relation
 	}
+	return a
 }
 
 // copyRule makes sr's copy for adornment a and the demand rules of the derived literals
@@ -125,8 +139,7 @@ func (w *rewriter) copyRule(sr *rule, a adorned) {
 			continue
 		}
 		if w.src.idb[l.Atom.Name] {
-			s := adorned{l.Atom.Name, adornmentOf(l.Atom.Args, bound)}
-			w.push(s)
+			s := w.push(adorned{l.Atom.Name, adornmentOf(l.Atom.Args, bound)})
 			if dr, ok := w.demandRule(sr, k, s, lead, headBound); ok {
 				w.out = append(w.out, dr)
 			}

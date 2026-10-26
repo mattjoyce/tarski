@@ -162,9 +162,10 @@ type demandCase struct {
 	full, demand tarski.Result
 }
 
-// newDemandCase builds and evaluates the case for a seed. ok is false when Demand
-// refuses the program as not yet supported (a rewrite that does not stratify).
-func newDemandCase(t *testing.T, seed uint64) (c demandCase, ok bool) {
+// newDemandCase builds and evaluates the case for a seed. Every program the generator
+// makes stratifies, so Demand compiles every one: a rewrite that breaks stratification
+// answers through the fallback (design §2.4).
+func newDemandCase(t *testing.T, seed uint64) (c demandCase) {
 	t.Helper()
 	r := rand.New(rand.NewPCG(seed, 0xde3a))
 	c.text = propProgram(r)
@@ -180,9 +181,6 @@ func newDemandCase(t *testing.T, seed uint64) (c demandCase, ok bool) {
 	c.goal = goal
 	dplan, err := plan.Demand(relation, adornment)
 	if err != nil {
-		if errors.Is(err, tarski.ErrInvalid) && strings.Contains(err.Error(), "not yet supported") {
-			return c, false
-		}
 		t.Fatalf("seed %d: Demand(%s, %s): %v\n%s", seed, relation, adornment, err, c.text)
 	}
 	if c.full, err = tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true}); err != nil {
@@ -191,7 +189,7 @@ func newDemandCase(t *testing.T, seed uint64) (c demandCase, ok bool) {
 	if c.demand, err = tarski.Evaluate(context.Background(), dplan, base, tarski.Options{Proofs: true, Goal: &goal}); err != nil {
 		t.Fatalf("seed %d: demand: %v\n%s", seed, err, c.text)
 	}
-	return c, true
+	return c
 }
 
 // checkAnswers holds the case to D1 and to the refusals of §3.2. It returns how many
@@ -289,20 +287,16 @@ func candidates(goal tarski.Goal) []tarski.Tuple {
 
 func TestDemand_AgreesWithFullEvaluation(t *testing.T) {
 	t.Parallel()
-	evaluated, tuples := 0, 0
+	tuples := 0
 	for seed := range uint64(400) {
-		c, ok := newDemandCase(t, seed)
-		if !ok {
-			continue
-		}
-		evaluated++
+		c := newDemandCase(t, seed)
 		tuples += c.checkAnswers(t, seed)
 		c.checkProofs(t, seed)
 		c.checkWhyNot(t, seed)
 	}
-	t.Logf("%d of 400 programs evaluated under demand, %d goal tuples", evaluated, tuples)
-	if evaluated < 300 || tuples < 300 {
-		t.Errorf("%d programs evaluated, %d goal tuples in all; the property is not being exercised", evaluated, tuples)
+	t.Logf("400 programs evaluated under demand, %d goal tuples", tuples)
+	if tuples < 300 {
+		t.Errorf("%d goal tuples in all; the property is not being exercised", tuples)
 	}
 }
 
@@ -312,10 +306,7 @@ func FuzzDemandMatchesFull(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, seed uint64) {
-		c, ok := newDemandCase(t, seed)
-		if !ok {
-			return
-		}
+		c := newDemandCase(t, seed)
 		c.checkAnswers(t, seed)
 		c.checkProofs(t, seed)
 	})
