@@ -182,6 +182,11 @@ func (ev *evaluator) merge(delta map[string]*relBuilder) {
 // apply derives r's head once over the database, with the positive atom at deltaPos
 // (if any) read from delta instead, and collects tuples not yet derived into out.
 func (ev *evaluator) apply(r *rule, delta *relBuilder, deltaPos int, out map[string]*relBuilder) error {
+	// Every application costs a step, so a rule with no positive atom (only guards, whose
+	// calls no join step pays for) is bounded by MaxSteps like any other.
+	if err := ev.step(r.Head.Name); err != nil {
+		return err
+	}
 	env := map[string]Const{}
 	if ev.proofs != nil {
 		ev.stack = make([]bodyTuple, 0, len(r.ordered))
