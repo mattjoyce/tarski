@@ -127,6 +127,9 @@ func rebuild(prior *relation, added []Tuple, arity int) *relation {
 	for _, t := range added {
 		r.add(t)
 	}
+	if len(r.tuples) < size {
+		r.compact(arity)
+	}
 	return r.seal(arity, true)
 }
 

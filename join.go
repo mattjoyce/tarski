@@ -17,7 +17,7 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relBuilde
 	case l.Aggregate != nil:
 		return ev.aggregate(r, i, env, delta, deltaPos, emit)
 	case l.Compare != nil || ev.builtins.has(l.Atom.Name):
-		ok, err := ev.builtins.guardHolds(l, env)
+		ok, err := ev.guard(r, l, env)
 		if err != nil || !ok {
 			return err
 		}
@@ -179,4 +179,16 @@ func (t builtinTable) guardHolds(l Literal, env map[string]Const) (bool, error) 
 		return holds(*l.Compare, env), nil
 	}
 	return t.holds(l, env)
+}
+
+// guard evaluates a comparison or a builtin literal under env. A builtin call costs a
+// step first, so MaxSteps bounds how often any Holds runs, however many builtins one
+// rule body holds; a comparison is free, as it always was.
+func (ev *evaluator) guard(r *rule, l Literal, env map[string]Const) (bool, error) {
+	if l.Compare == nil {
+		if err := ev.step(r.Head.Name); err != nil {
+			return false, err
+		}
+	}
+	return ev.builtins.guardHolds(l, env)
 }

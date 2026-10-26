@@ -77,7 +77,7 @@ argument is bound by a positive body atom, it binds and derives nothing, and Com
 table, so changing the map afterwards changes no plan.
 
 The contract splits in two. **The engine guarantees** termination (a builtin creates no value),
-a bounded number of calls (each follows a join step charged to `MaxSteps`), and that a `Holds`
+a bounded number of calls (each call is a step charged to `MaxSteps`), and that a `Holds`
 which panics fails the evaluation with `ErrInvalid` rather than escaping. **The consumer
 guarantees** that `Holds` is a pure, total, deterministic function of its arguments, safe to
 call concurrently, and that one call is cheap. An impure builtin voids "same inputs, same
