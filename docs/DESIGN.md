@@ -287,10 +287,10 @@ The full design, with the invariants stated first and the Soufflé comparison, i
 - **Frozen bytes.** No v0.1 answer, rule-set hash, proof or constant text moves;
   `golden_test.go` is unchanged and `aggregate_golden_test.go` pins the new shapes.
 
-### Demand-driven evaluation (v0.3, in progress)
+### Demand-driven evaluation (v0.3)
 
 The design, invariants first, is [`docs/design/demand.md`](design/demand.md); Matt's decisions
-are its §8. Built so far (card 9, slices 1 to 4):
+are its §8. Built on master (card 9, slices 1 to 5), to ship as v0.3.0:
 
 ```go
 type Goal struct {
