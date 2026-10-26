@@ -1,6 +1,6 @@
 ---
 id: 10
-status: backlog
+status: doing
 ---
 # Docs true-up after the v0.3.0 luminary panel
 
