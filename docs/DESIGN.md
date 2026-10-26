@@ -400,5 +400,6 @@ evaluate a `Comparison`.
   `Schema.Checks` is not the place (it sees one atom, not reachability).
 - **Bounds are approximate on bytes, exact on steps.** `MaxBytes` charges unescaped lengths, an
   estimate of the JSON text; `MaxSteps` counts every candidate visited by a join or a negation
-  probe, and one step for each rule application (v0.2.1), so a rule of guards alone is bounded too. Neither can be crossed with a nil error.
+  probe, and one step for each rule application (v0.2.1) and for each builtin call (v0.2.2), so MaxSteps
+  bounds how often any `Holds` runs, whatever the rule bodies hold. Neither can be crossed with a nil error.
 

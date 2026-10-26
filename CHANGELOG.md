@@ -4,6 +4,21 @@ Answer bytes, answer hashes, rule-set hashes and constants' canonical text are f
 (README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
 is listed here under its version.
 
+## v0.2.2 — 2026-10-26
+
+Two more findings from the same pressure review, after it replayed v0.2.1. No answer, hash or
+golden byte changes.
+
+- **Every builtin call costs a step.** v0.2.1 charged a step per rule application, which bounded
+  how many guard-only rules ran but not how many guards one body held: a rule of 1000 builtin
+  calls ran them all under `MaxSteps: 1`. Each builtin call is now a step, so `MaxSteps` bounds
+  `Holds` calls directly. Comparisons stay free. Step counts rise by one per builtin call.
+- **Duplicates keep no storage.** v0.1.0's faster `NewBase` (card 7) sized storage from the input
+  count and shared one backing array per relation, so 300,000 identical facts kept one tuple and
+  about 38 MB. A relation whose input held duplicates is now compacted to what it keeps.
+- Benchmarks: bytes and allocations per op are identical to v0.2.1; timings were too noisy on the
+  build machine to compare and the changed paths are not on the benchmarks' hot loop.
+
 ## v0.2.1 — 2026-10-26
 
 Fixes from an external pressure review of v0.2.0 (board agent tarski-pressure). No answer,
