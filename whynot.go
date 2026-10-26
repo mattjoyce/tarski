@@ -78,11 +78,14 @@ type RuleFailure struct {
 // when the relation or the tuple's arity is not the plan's, or when the evaluation ran
 // without Options.Proofs, or when a consumer builtin panicked while the rules were
 // walked (the panic does not escape). maxDepth bounds the recursion into Because; 0
-// means the engine's default.
+// means the engine's default. On a Result evaluated for a goal, ok is also false unless
+// name is the goal's relation and t agrees with the goal's constants: only there are the
+// relations the walk reads complete. The failing literal per rule is full evaluation's;
+// the bindings and blocking witness may differ where several exist (design D11).
 func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) {
 	rel, found := r.relations[name]
 	arity, known := r.plan.Arity(name)
-	if r.proofs == nil || !found || !known || len(t) != arity || rel.has(t) {
+	if r.proofs == nil || !found || !known || len(t) != arity || rel.has(t) || !r.covers(name, t) {
 		return Absence{}, false
 	}
 	goal := make([]Term, len(t))
@@ -98,11 +101,12 @@ func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) 
 // rule reports the farthest literal any binding reached. ok is false when the relation
 // holds a tuple (ask Proof of one), when it is not a relation of the plan, when the
 // evaluation ran without Options.Proofs, or when a consumer builtin panicked during the
-// walk. Bounded and deterministic as WhyNot is.
+// walk. Bounded and deterministic as WhyNot is. On a Result evaluated for a goal, ok is
+// also false unless name is the goal's relation and the goal leaves every position open.
 func (r Result) WhyEmpty(name string, maxDepth int) (a Absence, ok bool) {
 	rel, found := r.relations[name]
 	arity, known := r.plan.Arity(name)
-	if r.proofs == nil || !found || !known || len(rel.tuples) > 0 {
+	if r.proofs == nil || !found || !known || len(rel.tuples) > 0 || !r.openGoal(name) {
 		return Absence{}, false
 	}
 	goal := make([]Term, arity)

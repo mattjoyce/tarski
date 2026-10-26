@@ -24,16 +24,28 @@ type Answer struct {
 
 // Relation returns the named relation of the result as an Answer. A relation the
 // program never named is an error, not an empty answer.
+//
+// On a Result evaluated for a goal (Options.Goal), the goal's relation is full
+// evaluation's filtered to the goal's constants, byte for byte, and a base relation is
+// the base's. Any other derived relation is ErrInvalid, never a partial answer: the
+// message says how to ask for it.
 func (r Result) Relation(name string) (Answer, error) {
 	rel, ok := r.relations[name]
 	if !ok {
 		return Answer{}, fmt.Errorf("%w: no relation %s in the result", ErrInvalid, name)
 	}
+	if err := r.partial(name); err != nil {
+		return Answer{}, err
+	}
 	// Each tuple is cloned: a base relation's tuples are shared by every evaluation, and
-	// an answer owns its own.
-	tuples := make([]Tuple, len(rel.tuples))
-	for i, t := range rel.tuples {
-		tuples[i] = slices.Clone(t)
+	// an answer owns its own. Under a goal, recursion legitimately derives tuples of the
+	// goal's relation outside it, and they are left out.
+	filter := r.goal != nil && name == r.goal.Relation
+	tuples := make([]Tuple, 0, len(rel.tuples))
+	for _, t := range rel.tuples {
+		if !filter || r.goal.admits(t) {
+			tuples = append(tuples, slices.Clone(t))
+		}
 	}
 	sort.Slice(tuples, func(i, j int) bool { return tupleLess(tuples[i], tuples[j]) })
 	return sealed(name, tuples)

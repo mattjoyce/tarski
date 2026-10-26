@@ -52,13 +52,15 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relBuilde
 		if !ok {
 			continue
 		}
-		if ev.proofs != nil {
+		// A demand literal is the rewrite's, not the rule's: it is no body tuple of a proof.
+		push := ev.proofs != nil && i != r.demand
+		if push {
 			ev.stack = append(ev.stack, bodyTuple{l.Atom.Name, rel.tuples()[idx]})
 		}
 		if err := ev.join(r, i+1, env, delta, deltaPos, emit); err != nil {
 			return err
 		}
-		if ev.proofs != nil {
+		if push {
 			ev.stack = ev.stack[:len(ev.stack)-1]
 		}
 		for _, v := range bound {

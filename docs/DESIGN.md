@@ -287,6 +287,38 @@ The full design, with the invariants stated first and the Soufflé comparison, i
 - **Frozen bytes.** No v0.1 answer, rule-set hash, proof or constant text moves;
   `golden_test.go` is unchanged and `aggregate_golden_test.go` pins the new shapes.
 
+### Demand-driven evaluation (v0.3, in progress)
+
+The design, invariants first, is [`docs/design/demand.md`](design/demand.md); Matt's decisions
+are its §8. Built so far (card 9, slices 1 and 2):
+
+```go
+type Goal struct {
+    Relation string
+    Args     []Term   // a constant binds the position; a variable (any name, "_" included) leaves it open
+}
+func (p Plan) Demand(relation, adornment string) (Plan, error)   // adornment: one b or f per position
+// Options.Goal *Goal: required on a plan from Demand, ErrInvalid on any other
+func (r Result) Goal() (g Goal, ok bool)                          // ok false for a full evaluation
+```
+
+- **Answers.** On a demand Result, `Relation(goal relation)` is full evaluation's relation
+  filtered to the goal's constants, byte for byte and hash for hash; a base relation is the
+  base's; any other derived relation is `ErrInvalid` with a message saying how to read it. A
+  hidden demand relation is never named: not by `Relation`, `Arity`, a proof or `*TooLarge`.
+- **Goals.** A goal names the plan's relation, has its arity, a constant at every `b` and a
+  variable at every `f`; a variable other than `_` written twice is refused (an adornment
+  cannot express equality).
+- **Proofs and why-not** are given only for the goal's relation and tuples that agree with
+  the goal's constants; `WhyEmpty` only when the goal leaves every position open. A proof is a
+  valid, deterministic derivation by a source rule, not promised to be the one full evaluation
+  records first; a why-not fails at the same literal per rule, with bindings and blocking
+  witness possibly different where several exist.
+- **Bounds.** Demand relations' tuples, the goal's seed included, are charged to `MaxBytes` and
+  their joins to `MaxSteps`.
+- **Not yet.** `Demand` refuses, with `ErrInvalid` saying "not yet supported", a plan with
+  aggregates and a plan whose rewrite cannot be stratified. Later slices lift both.
+
 ### Built-ins
 
 A builtin is a relation answered in Go, a guard like a comparison: every argument must be

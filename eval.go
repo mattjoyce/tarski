@@ -13,6 +13,7 @@ type Result struct {
 	proofs    map[string]map[string]*derivation // nil unless Options.Proofs
 	groups    map[string]groupRecord            // nil unless Options.Proofs and an aggregate derived a tuple
 	plan      Plan                              // what WhyNot reads the rules and arities from
+	goal      *Goal                             // nil unless the plan was compiled for a goal (demand.go)
 }
 
 // Options bounds and shapes one evaluation.
@@ -28,6 +29,11 @@ type Options struct {
 	// Proofs records, for each derived tuple, the first derivation that produced it.
 	// It touches the hot loop, so it is off unless asked for.
 	Proofs bool
+	// Goal is the question a plan compiled by Plan.Demand answers: its relation, a
+	// constant at every position the plan's adornment binds, and a variable at every
+	// position it leaves open. It is required on such a plan and refused (ErrInvalid) on
+	// any other. The Result then answers only the goal: see Result.Relation.
+	Goal *Goal
 }
 
 // Evaluate runs a plan over a base to its fixpoint, stratum by stratum, semi-naive
@@ -45,6 +51,10 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if err := plan.accepts(base); err != nil {
 		return Result{}, err
 	}
+	strata, idb, goal, err := plan.goal(opts.Goal)
+	if err != nil {
+		return Result{}, err
+	}
 	ev := &evaluator{ctx: ctx, db: map[string]source{}, opts: opts, builtins: plan.builtins}
 	if opts.Proofs {
 		ev.proofs = map[string]map[string]*derivation{}
@@ -52,32 +62,58 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	for name, rel := range base.relations {
 		ev.db[name] = source{val: rel}
 	}
-	for name := range plan.idb {
+	for name := range idb {
 		ev.db[name] = source{bld: newRelBuilder()}
 	}
-	for _, stratum := range plan.strata {
+	if err := ev.seed(plan, goal); err != nil {
+		return Result{}, err
+	}
+	for _, stratum := range strata {
 		if err := ev.stratum(stratum); err != nil {
-			return Result{}, err
+			return Result{}, plan.visible(err)
 		}
 	}
 	// A bound crossed by the last tuple of the last round raises no error inside the
 	// join; it is raised here, so MaxBytes is never exceeded with a nil error.
 	if ev.over != nil {
-		return Result{}, ev.over
+		return Result{}, plan.visible(ev.over)
 	}
 	// A cancellation that landed after the last look at the deadline is honoured
 	// here, so a cancelled evaluation never returns a result.
 	if err := ev.deadline(); err != nil {
 		return Result{}, err
 	}
-	return Result{relations: ev.sealed(plan), proofs: ev.proofs, groups: ev.groups, plan: plan}, nil
+	return Result{relations: ev.sealed(plan), proofs: ev.proofs, groups: ev.groups, plan: plan, goal: goal}, nil
+}
+
+// seed adds the goal's constants to the seed relation of a plan compiled for a goal,
+// charged like any derived tuple, before the first stratum runs. A goal with every
+// position open, and a plan compiled for none, have no seed.
+func (ev *evaluator) seed(plan Plan, goal *Goal) error {
+	if goal == nil {
+		return nil
+	}
+	t, ok := plan.demand.seedTuple(goal)
+	if !ok {
+		return nil
+	}
+	ev.db[plan.demand.seed].bld.add(t)
+	ev.count(plan.demand.seed, t)
+	if ev.over != nil {
+		return plan.visible(ev.over)
+	}
+	return nil
 }
 
 // sealed is the evaluation's relations as values: the base's own, and each derived
 // relation sealed without indexes, which costs nothing. After this no builder is held.
+// A hidden demand relation is left out, so a Result knows no hidden name.
 func (ev *evaluator) sealed(plan Plan) map[string]*relation {
 	out := make(map[string]*relation, len(ev.db))
 	for name, s := range ev.db {
+		if plan.demand != nil && plan.demand.hidden[name] != "" {
+			continue
+		}
 		if s.val != nil {
 			out[name] = s.val
 		} else {
@@ -220,7 +256,8 @@ type bodyTuple struct {
 	tuple    Tuple
 }
 
-// record keeps the derivation that just added t. apply reaches it only for a tuple
+// record keeps the derivation that just added t, naming the rule as written: a rule
+// rewritten for a goal names its source. apply reaches it only for a tuple
 // neither the database nor this round had, so what is kept is the first derivation. A
 // body tuple was in the database or the last round's delta, hence derived strictly
 // earlier, which is what keeps a proof acyclic.
@@ -230,7 +267,11 @@ func (ev *evaluator) record(r *rule, t Tuple) {
 		by = map[string]*derivation{}
 		ev.proofs[r.Head.Name] = by
 	}
-	d := &derivation{rule: &r.Rule}
+	src := &r.Rule
+	if r.source != nil {
+		src = r.source
+	}
+	d := &derivation{rule: src}
 	if len(ev.stack) > 0 {
 		d.body = append([]bodyTuple(nil), ev.stack...)
 	}

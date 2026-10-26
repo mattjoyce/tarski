@@ -27,7 +27,7 @@ func newAggPlan(head string, a *Aggregate, group []string, table builtinTable) *
 	for _, g := range group {
 		bound[g] = true
 	}
-	inner := &rule{Rule: Rule{Head: Atom{Name: head}}, ordered: order(a.Body, table, bound, nil)}
+	inner := &rule{Rule: Rule{Head: Atom{Name: head}}, ordered: order(a.Body, table, bound, nil), demand: noDemand}
 	return &aggPlan{lit: a, group: group, inner: inner}
 }
 

@@ -26,6 +26,7 @@ type Plan struct {
 	base     map[string]int  // the schema's relations and arities, which a Base must match
 	arity    map[string]int  // every relation, base and derived
 	builtins builtinTable    // engine and consumer builtins, copied at Compile
+	demand   *demandPlan     // nil unless the plan was compiled for a goal (demand.go)
 }
 
 // Schema names the base relations a base may hold and, per relation, an optional
@@ -43,12 +44,22 @@ type Schema struct {
 // positive atoms whose relation the rule's own stratum derives. aggs is indexed like
 // ordered and holds each aggregate literal's evaluation plan; it is nil for a rule with
 // no aggregate, which is every rule a v0.1 program has.
+//
+// A rule rewritten for a goal (demand.go) also names the rule it was rewritten from in
+// source, so a proof names the rule as written, and holds in demand the index in ordered
+// of the demand literal it leads with, which no proof lists. A rule that is its own
+// source has source nil and demand noDemand.
 type rule struct {
 	Rule
 	ordered   []Literal
 	recursive []int
 	aggs      []*aggPlan
+	source    *Rule
+	demand    int
 }
+
+// noDemand is rule.demand for a rule with no demand literal: no index in ordered.
+const noDemand = -1
 
 // Compile validates programs against a schema and groups their rules into strata.
 // The programs are read as one: a later program defines what an earlier one declared,

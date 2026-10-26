@@ -2,6 +2,7 @@ package tarski_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -57,7 +58,31 @@ func FuzzParseCompileEvaluate(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 		_, _ = tarski.Evaluate(ctx, plan, base, tarski.Options{Proofs: true, MaxSteps: 1000, MaxBytes: 4096})
+		demandPath(ctx, plan, base)
 	})
+}
+
+// demandPath compiles the plan for a goal over out, its first position bound to "x" and
+// the rest open, and evaluates it under tight bounds; refusals are fine, a panic is not.
+func demandPath(ctx context.Context, plan tarski.Plan, base tarski.Base) {
+	n, ok := plan.Arity("out")
+	if !ok {
+		return
+	}
+	dplan, err := plan.Demand("out", "b"+strings.Repeat("f", n-1))
+	if err != nil {
+		return
+	}
+	goal := tarski.Goal{Relation: "out", Args: []tarski.Term{{Const: tarski.String("x")}}}
+	for i := 1; i < n; i++ {
+		goal.Args = append(goal.Args, tarski.Term{Var: "V" + strconv.Itoa(i)})
+	}
+	res, err := tarski.Evaluate(ctx, dplan, base, tarski.Options{Proofs: true, MaxSteps: 1000, MaxBytes: 4096, Goal: &goal})
+	if err != nil {
+		return
+	}
+	_, _ = res.Relation("out")
+	_, _ = res.WhyEmpty("out", 0)
 }
 
 // checkStringsAreText fails if a parsed program holds a string constant that is not
