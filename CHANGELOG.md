@@ -4,6 +4,25 @@ What is frozen, what is stable within a minor version and what is not promised i
 README § What it promises consumers. Any change to a frozen row is breaking and is listed here
 under its version.
 
+## Unreleased
+
+Hardening from the RBAC pressure review (card 13, `reviews/luminary-rbac-2026-10-26/`). No
+answer, hash, proof, golden byte or step count changes for any input that was accepted and
+meant what it said.
+
+- **Negative bounds are refused.** `Evaluate` returns ErrInvalid for a negative
+  `Options.MaxSteps` or `Options.MaxBytes`, which every check had read as no bound. Zero is
+  still no bound.
+- **Strict JSON constants.** `Const.UnmarshalJSON` refuses invalid UTF-8, a lone surrogate
+  escape and trailing text (`1]` called directly) with ErrSyntax; each used to decode, the first
+  two as U+FFFD. `Const.MarshalJSON` refuses a string that is not valid UTF-8 with ErrInvalid.
+  Answers never held one, since every entry point already refuses them.
+- **A join's memory follows its steps.** An unbound literal no longer builds a list of every
+  candidate index before the first step is charged: a refused scan of 100,000 facts under
+  `MaxSteps: 1` allocated about 800 KB and now allocates what one over 1,000 does. A derived
+  relation's lazy index is extended as the relation grows instead of rebuilt, so indexing costs
+  work in proportion to the tuples derived. `BenchmarkEvaluate` is unchanged within noise.
+
 ## v0.3.1 — 2026-10-26
 
 Documentation release (card 10), from the luminary panel on v0.3.0
