@@ -4,10 +4,9 @@ Answer bytes, answer hashes, rule-set hashes and constants' canonical text are f
 (README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
 is listed here under its version.
 
-## Unreleased (v0.2.0)
+## v0.2.0 — 2026-10-26
 
-Aggregates (card 6), built on master. The semantics are settled (design § 13, decided with Matt
-2026-10-26). Tagged once the consumer steps below are done.
+Aggregates (card 6). The semantics were settled with Matt (design § 13).
 
 Before a consumer adopts v0.2 (Go resolves the Shearline/Anam/Ductile diamond to one tarski, so
 Anam taking v0.2 moves Shearline too):
