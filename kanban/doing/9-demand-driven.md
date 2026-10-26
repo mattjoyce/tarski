@@ -15,3 +15,6 @@ When Anam asks a question that touches a sliver of the ledger, or Shearline deci
 
 ## Plan
 1. Design doc `docs/design/demand.md` (fable rung; Lamport × Thomas/Hunt and Helland × Stonebraker passes). Design only until Matt reviews it.
+
+## Narrative
+- 2026-10-26: design written to `docs/design/demand.md` (fable rung). Recommends non-subsumptive magic sets, one hidden demand relation per (relation, adornment) writing into the source relation, so names in Result, proofs and why-not stay the source's. On a stratification break the rewrite drops demand per relation and re-stratifies. Additive API: `Goal`, `Plan.Demand`, `Options.Goal`, `Result.Goal`. Fourteen questions for Matt in its § Open questions. No code until he reviews it. (by datalog-module)
