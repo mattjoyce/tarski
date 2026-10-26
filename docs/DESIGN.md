@@ -290,7 +290,7 @@ The full design, with the invariants stated first and the Soufflé comparison, i
 ### Demand-driven evaluation (v0.3, in progress)
 
 The design, invariants first, is [`docs/design/demand.md`](design/demand.md); Matt's decisions
-are its §8. Built so far (card 9, slices 1 and 2):
+are its §8. Built so far (card 9, slices 1 to 4):
 
 ```go
 type Goal struct {
@@ -316,8 +316,24 @@ func (r Result) Goal() (g Goal, ok bool)                          // ok false fo
   witness possibly different where several exist.
 - **Bounds.** Demand relations' tuples, the goal's seed included, are charged to `MaxBytes` and
   their joins to `MaxSteps`.
-- **Not yet.** `Demand` refuses, with `ErrInvalid` saying "not yet supported", a plan with
-  aggregates and a plan whose rewrite cannot be stratified. Later slices lift both.
+- **Fallback.** Where the magic rewrite would break stratification, demand is dropped for one
+  relation and the rewrite runs again, until it stratifies: in the first strongly connected
+  component holding a negative edge, the source relation of the first demand relation by
+  sorted name. A relation reached under more than `maxAdornments` (64) binding patterns has its
+  demand dropped the same way. A dropped relation is derived whole wherever it is reached, the
+  goal's own included (it then has no seed), and the relations below it keep their demand. It
+  never changes an answer, it ends (each round drops a relation not dropped before, and the
+  source program stratifies), and it is a function of the plan and the goal shape.
+- **Aggregates.** Demand enters an aggregate's braces only through its group variables: the
+  atoms inside are adorned with the group variables bound and then what the inner atoms
+  before them bind, never a local from outside, so for every group the goal needs, each
+  relation read inside the braces is complete for that group and the group is computed whole.
+  The value is full evaluation's, and why-not through an aggregate, which computes the group
+  over the result's relations, meets the same value. Copies of an aggregate rule share its
+  aggregate plans, so a group's memoised value and witnesses are one per evaluation, and a
+  proof's group lists witnesses full evaluation holds. An aggregate's result passes no demand:
+  a literal after the aggregate that reads the result is adorned open at that position (a
+  demand rule holds positive atoms only), which is sound and complete, only less selective.
 
 ### Built-ins
 

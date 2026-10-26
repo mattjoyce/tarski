@@ -27,7 +27,9 @@ type Goal struct {
 // adornment (a b where the goal binds a position, an f where it leaves it open), the
 // hidden relation the goal's constants seed, and the rewritten program's strata and
 // derived relations. hidden maps each hidden demand relation to the source relation
-// whose demand it holds.
+// whose demand it holds. dropped is the relations whose demand the fallback dropped, in
+// the order it dropped them (demand_fallback.go); each is derived whole. seed is empty
+// when the goal binds nothing or its own relation's demand was dropped.
 type demandPlan struct {
 	relation  string
 	adornment string
@@ -35,6 +37,7 @@ type demandPlan struct {
 	strata    [][]rule
 	idb       map[string]bool
 	hidden    map[string]string
+	dropped   []string
 }
 
 // Demand compiles the plan to answer one shape of question: goals over relation whose
@@ -44,10 +47,15 @@ type demandPlan struct {
 // what the receiver would for the goal's relation, filtered to the goal's constants,
 // and derives only what can reach the goal; it is a value, shareable as any plan is.
 //
+// Where the rewrite would break stratification, or would copy one relation's rules for
+// more than 64 binding patterns, demand is dropped for that relation, which is then
+// derived whole; the answer is the same either way, only the work differs.
+//
+// Demand passes into an aggregate's braces only through its group variables, so every
+// group the goal needs is computed whole and its value is full evaluation's.
+//
 // ErrInvalid for an unknown or base relation, a malformed adornment, or a plan already
-// compiled for a goal. Two kinds of plan are not yet supported and are refused with
-// ErrInvalid saying so: a plan with aggregates, and one whose rewrite cannot be
-// stratified.
+// compiled for a goal.
 func (p Plan) Demand(relation, adornment string) (Plan, error) {
 	if p.demand != nil {
 		return Plan{}, fmt.Errorf("%w: the plan is already compiled for goals over %s; call Demand on the plan Compile returned",
@@ -63,9 +71,6 @@ func (p Plan) Demand(relation, adornment string) (Plan, error) {
 	case len(adornment) != arity || strings.Trim(adornment, "bf") != "":
 		return Plan{}, fmt.Errorf("%w: Demand: adornment %q for %s/%d: write one b (bound) or f (open) per position",
 			ErrInvalid, adornment, relation, arity)
-	case p.HasAggregates():
-		return Plan{}, fmt.Errorf("%w: Demand: demand through aggregates is not yet supported; evaluate the plan without a goal",
-			ErrInvalid)
 	}
 	d, err := p.rewrite(relation, adornment)
 	if err != nil {
@@ -139,8 +144,12 @@ func (d *demandPlan) check(g Goal) error {
 
 // seedTuple is the goal's constants at its bound positions: the one tuple of the seed
 // relation, added before the first stratum runs. ok is false for a goal with every
-// position open, which has no seed: its relation is derived whole.
+// position open, and for a goal whose relation's demand the fallback dropped: neither
+// has a seed, and its relation is derived whole.
 func (d *demandPlan) seedTuple(g *Goal) (t Tuple, ok bool) {
+	if d.seed == "" {
+		return nil, false
+	}
 	for i, a := range g.Args {
 		if d.adornment[i] == 'b' {
 			t = append(t, a.Const)

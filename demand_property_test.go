@@ -93,13 +93,20 @@ func propDemandBase(r *rand.Rand) []tarski.Fact {
 	return facts
 }
 
-// propGoal is a random goal: a derived relation, a random adornment, and constants
-// from the domain or, one time in four, from outside it.
-func propGoal(r *rand.Rand) (relation, adornment string, goal tarski.Goal) {
-	relation, arity := "q", 1
-	if k := r.IntN(5); k < 4 {
-		relation, arity = "r"+strconv.Itoa(k), 2
-	}
+// propRelations is the derived relations of propProgram, with their arities.
+var propRelations = []relArity{{"r0", 2}, {"r1", 2}, {"r2", 2}, {"r3", 2}, {"q", 1}}
+
+// relArity is a relation a goal may name, with its arity.
+type relArity struct {
+	name  string
+	arity int
+}
+
+// propGoal is a random goal over one of rels: a random adornment, and constants from
+// the domain or, one time in four, from outside it.
+func propGoal(r *rand.Rand, rels []relArity) (relation, adornment string, goal tarski.Goal) {
+	pick := rels[r.IntN(len(rels))]
+	relation, arity := pick.name, pick.arity
 	goal.Relation = relation
 	for i := range arity {
 		if r.IntN(2) == 0 {
@@ -155,19 +162,33 @@ func agrees(goal tarski.Goal, tup tarski.Tuple) bool {
 	return true
 }
 
-// demandCase is one seed's program, base and goal, evaluated in full and under demand.
+// demandCase is one seed's program, base and goal, evaluated in full and under demand,
+// with the program's derived and base relations and the constants a why-not tries.
 type demandCase struct {
-	text         string
-	goal         tarski.Goal
-	full, demand tarski.Result
+	text          string
+	goal          tarski.Goal
+	full, demand  tarski.Result
+	derived, base []string
+	domain        []tarski.Const
 }
 
-// newDemandCase builds and evaluates the case for a seed. ok is false when Demand
-// refuses the program as not yet supported (a rewrite that does not stratify).
-func newDemandCase(t *testing.T, seed uint64) (c demandCase, ok bool) {
+// propStrings is the domain as constants.
+func propStrings() []tarski.Const {
+	out := make([]tarski.Const, len(propDomain))
+	for i, x := range propDomain {
+		out[i] = tarski.String(x)
+	}
+	return out
+}
+
+// newDemandCase builds and evaluates the case for a seed. Every program the generator
+// makes stratifies, so Demand compiles every one: a rewrite that breaks stratification
+// answers through the fallback (design §2.4).
+func newDemandCase(t *testing.T, seed uint64) (c demandCase) {
 	t.Helper()
 	r := rand.New(rand.NewPCG(seed, 0xde3a))
 	c.text = propProgram(r)
+	c.derived, c.base, c.domain = []string{"r0", "r1", "r2", "r3", "q"}, []string{"e", "n", "f"}, propStrings()
 	plan, err := tarski.Compile(propDemandSchema, parse(t, c.text))
 	if err != nil {
 		t.Fatalf("seed %d: Compile: %v\n%s", seed, err, c.text)
@@ -176,13 +197,10 @@ func newDemandCase(t *testing.T, seed uint64) (c demandCase, ok bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relation, adornment, goal := propGoal(r)
+	relation, adornment, goal := propGoal(r, propRelations)
 	c.goal = goal
 	dplan, err := plan.Demand(relation, adornment)
 	if err != nil {
-		if errors.Is(err, tarski.ErrInvalid) && strings.Contains(err.Error(), "not yet supported") {
-			return c, false
-		}
 		t.Fatalf("seed %d: Demand(%s, %s): %v\n%s", seed, relation, adornment, err, c.text)
 	}
 	if c.full, err = tarski.Evaluate(context.Background(), plan, base, tarski.Options{Proofs: true}); err != nil {
@@ -191,7 +209,7 @@ func newDemandCase(t *testing.T, seed uint64) (c demandCase, ok bool) {
 	if c.demand, err = tarski.Evaluate(context.Background(), dplan, base, tarski.Options{Proofs: true, Goal: &goal}); err != nil {
 		t.Fatalf("seed %d: demand: %v\n%s", seed, err, c.text)
 	}
-	return c, true
+	return c
 }
 
 // checkAnswers holds the case to D1 and to the refusals of §3.2. It returns how many
@@ -206,7 +224,7 @@ func (c demandCase) checkAnswers(t *testing.T, seed uint64) int {
 	if string(got.Bytes()) != string(want.Bytes()) || got.Hash() != want.Hash() {
 		t.Fatalf("seed %d: goal %v\n%s\ndemand %s\nfull   %s", seed, c.goal, c.text, got.Bytes(), want.Bytes())
 	}
-	for _, name := range []string{"r0", "r1", "r2", "r3", "q"} {
+	for _, name := range c.derived {
 		if name == c.goal.Relation {
 			continue
 		}
@@ -214,7 +232,7 @@ func (c demandCase) checkAnswers(t *testing.T, seed uint64) int {
 			t.Fatalf("seed %d: Relation(%s) on a demand result = %v, want ErrInvalid", seed, name, err)
 		}
 	}
-	for _, name := range []string{"e", "n", "f"} {
+	for _, name := range c.base {
 		a, _ := c.full.Relation(name)
 		b, err := c.demand.Relation(name)
 		if err != nil || a.Hash() != b.Hash() {
@@ -242,6 +260,16 @@ func (c demandCase) checkProofs(t *testing.T, seed uint64) {
 				t.Fatalf("seed %d: proof body %s%v is not in the full result", seed, body.Relation, body.Tuple)
 			}
 		}
+		if p.GroupSize < len(p.Group) {
+			t.Fatalf("seed %d: proof of %s%v keeps %d witnesses of a group of %d", seed, c.goal.Relation, tup, len(p.Group), p.GroupSize)
+		}
+		for _, w := range p.Group {
+			for _, wt := range w {
+				if _, ok := c.full.Proof(wt.Relation, wt.Tuple); !ok {
+					t.Fatalf("seed %d: proof witness %s%v is not in the full result", seed, wt.Relation, wt.Tuple)
+				}
+			}
+		}
 	}
 }
 
@@ -250,7 +278,7 @@ func (c demandCase) checkProofs(t *testing.T, seed uint64) {
 // failing literal in each.
 func (c demandCase) checkWhyNot(t *testing.T, seed uint64) {
 	t.Helper()
-	for _, tup := range candidates(c.goal) {
+	for _, tup := range candidates(c.goal, c.domain) {
 		if _, in := c.full.Proof(c.goal.Relation, tup); in {
 			continue
 		}
@@ -268,8 +296,8 @@ func (c demandCase) checkWhyNot(t *testing.T, seed uint64) {
 	}
 }
 
-// candidates is every tuple over the domain that agrees with the goal's constants.
-func candidates(goal tarski.Goal) []tarski.Tuple {
+// candidates is every tuple over domain that agrees with the goal's constants.
+func candidates(goal tarski.Goal, domain []tarski.Const) []tarski.Tuple {
 	out := []tarski.Tuple{{}}
 	for _, a := range goal.Args {
 		var next []tarski.Tuple
@@ -278,8 +306,8 @@ func candidates(goal tarski.Goal) []tarski.Tuple {
 				next = append(next, append(append(tarski.Tuple{}, prefix...), a.Const))
 				continue
 			}
-			for _, x := range propDomain {
-				next = append(next, append(append(tarski.Tuple{}, prefix...), tarski.String(x)))
+			for _, x := range domain {
+				next = append(next, append(append(tarski.Tuple{}, prefix...), x))
 			}
 		}
 		out = next
@@ -289,34 +317,29 @@ func candidates(goal tarski.Goal) []tarski.Tuple {
 
 func TestDemand_AgreesWithFullEvaluation(t *testing.T) {
 	t.Parallel()
-	evaluated, tuples := 0, 0
+	tuples := 0
 	for seed := range uint64(400) {
-		c, ok := newDemandCase(t, seed)
-		if !ok {
-			continue
-		}
-		evaluated++
+		c := newDemandCase(t, seed)
 		tuples += c.checkAnswers(t, seed)
 		c.checkProofs(t, seed)
 		c.checkWhyNot(t, seed)
 	}
-	t.Logf("%d of 400 programs evaluated under demand, %d goal tuples", evaluated, tuples)
-	if evaluated < 300 || tuples < 300 {
-		t.Errorf("%d programs evaluated, %d goal tuples in all; the property is not being exercised", evaluated, tuples)
+	t.Logf("400 programs evaluated under demand, %d goal tuples", tuples)
+	if tuples < 300 {
+		t.Errorf("%d goal tuples in all; the property is not being exercised", tuples)
 	}
 }
 
-// FuzzDemandMatchesFull is the property above over seeds the fuzzer picks.
+// FuzzDemandMatchesFull is the property above, and its aggregate form
+// (demand_aggregate_property_test.go), over seeds the fuzzer picks.
 func FuzzDemandMatchesFull(f *testing.F) {
 	for _, s := range []uint64{0, 1, 7, 42, 1 << 40} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, seed uint64) {
-		c, ok := newDemandCase(t, seed)
-		if !ok {
-			return
+		for _, c := range []demandCase{newDemandCase(t, seed), newAggDemandCase(t, seed)} {
+			c.checkAnswers(t, seed)
+			c.checkProofs(t, seed)
 		}
-		c.checkAnswers(t, seed)
-		c.checkProofs(t, seed)
 	})
 }
