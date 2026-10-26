@@ -59,7 +59,7 @@ func checkHead(r Rule, bound map[string]bool) error {
 		case !a.IsVar() || bound[a.Var]:
 			continue
 		case insideAggregate(r.Body, a.Var):
-			return fmt.Errorf("%w: line %d: %s in the head of %s is bound only inside an aggregate, where it is local to the group; "+
+			return fmt.Errorf("%w: line %d: %s in the head of %s occurs only inside an aggregate, where it is local to the group; "+
 				"bind it by a positive atom in the outer body or aggregate over it", ErrInvalid, r.Line, a.Var, r.Head.Name)
 		default:
 			return fmt.Errorf("%w: line %d: %s in the head of %s is not bound by a positive body atom", ErrInvalid, r.Line, a.Var, r.Head.Name)

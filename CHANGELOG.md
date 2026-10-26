@@ -9,6 +9,17 @@ is listed here under its version.
 Aggregates (card 6), built on master. Tagged once Matt has settled the open questions in
 `docs/design/aggregates.md` § 11; until then any of the semantics below may change.
 
+Before a consumer adopts v0.2 (Go resolves the Shearline/Anam/Ductile diamond to one tarski, so
+Anam taking v0.2 moves Shearline too):
+
+- **Shearline:** refuse aggregates in `policy.Load` with `plan.HasAggregates()`, and teach any
+  code that walks rule bodies that a `Literal` may now be an `Aggregate` (neither `Atom` nor
+  `Compare` set).
+- **Anam:** `scripts/souffle-diff.py` must skip min or max over strings and any multi-literal
+  aggregate body holding `_`, where Soufflé differs (design § 12, § 12.1).
+- **Everyone with aggregates:** set `MaxSteps`; it bounds an aggregate's memory as well as its
+  work.
+
 - **Aggregates.** `N = count : { body }`, `S = sum X : { ... }`, `min`, `max`, in Soufflé's
   syntax. Stratified like negation, exact sums, empty count and sum are 0, empty min and max
   derive nothing, mixed kinds derive no tuple. `avg` and `mean` are refused. Witnesses are the

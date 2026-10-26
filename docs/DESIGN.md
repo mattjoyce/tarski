@@ -96,7 +96,10 @@ type Options struct {
 // joins a wide product and derives only duplicates is charged no bytes, so without
 // MaxSteps its termination would rest on the caller's deadline alone. MaxSteps also
 // charges an aggregate's inner candidates, one step per group computed, and a sum's
-// fold priced by sumWork before it runs (§ Aggregates). *TooLarge carries Bound:
+// fold priced by sumWork before it runs (§ Aggregates). An aggregate's memo and, with
+// Proofs, its kept witnesses grow with the groups computed, and a group that derives no
+// tuple is charged no bytes: MaxSteps, not MaxBytes, is what bounds an aggregate's memory,
+// so set it whenever rules use aggregates. *TooLarge carries Bound:
 // BoundBytes, BoundSteps, or BoundNumber (a sum wider than maxSumDigits or whose text
 // would pass maxExponent), and its message starts "tarski:".
 // A base that holds a relation the plan derives is ErrInvalid at Evaluate, as is one
@@ -181,7 +184,8 @@ type RuleFailure struct {
     Failed  Literal            // the farthest literal with no match (negation: one that held)
     Because []Absence          // why Failed found nothing, when it is a derived positive atom
     Blocked *Proof             // when Failed is a negation that held: the tuple that blocked
-    Value   *Const             // v0.2: when Failed is an aggregate, its value for the group
+    Value   *Const             // v0.2: when Failed is an aggregate whose group had a value that
+                               // differed from the result already bound: that value; else nil
     Reason  string             // v0.2: why the aggregate stopped the rule (empty min/max group,
                                // mixed kinds, a non-number summed, a bound result that differs)
 }
@@ -275,6 +279,11 @@ The full design, with the invariants stated first and the Soufflé comparison, i
 - **Bounds.** Inner candidates are steps; a sum's fold is charged before it runs; a sum wider
   than `maxSumDigits = 1 << 16` places, or whose text would pass `maxExponent`, is `*TooLarge`
   with `BoundNumber`.
+- **Several aggregates in a rule** are independent: a group variable may not be another
+  aggregate's Result (refused at Compile); write the second aggregate in a rule of its own.
+- **Witness order in a proof** follows the inner join's relation order, which follows the base's
+  fact order, as `Proof.Body` always has. The answer and its hash do not depend on it; a proof
+  pinned across a re-ingested base may.
 - **Frozen bytes.** No v0.1 answer, rule-set hash, proof or constant text moves;
   `golden_test.go` is unchanged and `aggregate_golden_test.go` pins the new shapes.
 

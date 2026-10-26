@@ -61,7 +61,14 @@ and builtins. The two readings are the same set: an assignment fixes each atom's
 combinations that differ at some atom differ at a variable or wildcard position there, since a
 constant position cannot differ. This is Soufflé's reading: it counts solutions of the body, so
 `count : { r(G, _) }` counts the tuples of `r` with first argument g, and `sum V : { e(E),
-a(E, V) }` adds `V` once per (E, V) witness even when two entries share one amount.
+a(E, V) }` adds `V` once per (E, V) witness even when two entries share one amount. (Soufflé
+agrees here because every variable is named; with a `_` in a multi-literal body it does not, see
+§12.1.)
+
+A body may hold only guards over group variables, as in `N = count : { G != "a" }` or
+`N = count : { not item(G, _) }`. Its witness set has zero local variables, so it is `{()}` when
+the guards hold and empty when they do not: the count is 1 or 0. Soufflé agrees
+(`N = count : { X = 1 }` is 1). Only empty braces are refused, by the parser.
 
 ### 1.2 The four operations
 
@@ -322,7 +329,8 @@ Value  *Const
 Reason string // "" unless Failed is an aggregate: "the group is empty", "the group mixes kinds: 12 and \"12\""
 ```
 
-Text: `stopped at N = count : { ... }  with M="2026-06", the aggregate is 3`. JSON: `"value"`
+Text: `stopped at N = count : { ... }  with M="2026-06": the aggregate is 3, not 5`, the reason
+appended after a colon so the line can carry every reason. JSON: `"value"`
 and `"reason"`, `omitempty`. A failed outer positive atom inside the walk is explained as today;
 the inner body is not explained recursively in v0.2 (an empty group's cause would need a
 why-not per inner atom over an open goal; noted for later, not blocking).

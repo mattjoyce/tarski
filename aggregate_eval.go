@@ -42,8 +42,8 @@ type aggKey struct {
 // derives no tuple: a min or max over an empty group, or a group whose values the
 // operation cannot take (a non-number under sum, two kinds under min or max). size is
 // the number of witnesses. mixed holds what made the group unusable, in witness order:
-// the first non-number under sum, or the two first constants of different kinds under
-// min or max. It is kept for the why-not of an absent tuple, which reports it.
+// the first non-number under sum; under min or max, the extreme held so far and the
+// first constant whose kind differs from it. It is kept for the why-not of an absent tuple, which reports it.
 type aggValue struct {
 	value Const
 	ok    bool

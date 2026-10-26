@@ -63,7 +63,8 @@ entry, and three consumers have to agree.
   across goroutines, so any number of `Evaluate` calls may run on one plan and one base.
 - **Fail closed and bounded.** The context is checked on entry and during evaluation. Crossing
   `MaxBytes` or `MaxSteps`, or summing past the exact-number bounds, returns `*TooLarge`, never a
-  partial answer. No consumer input can
+  partial answer. With aggregates, set `MaxSteps`: it bounds an aggregate's memory as well as its
+  work, since a group that derives nothing is charged no bytes. No consumer input can
   make the engine panic, and the fuzz suites in CI hold that.
 - **Receipts as data.** `Proof`, `Absence` and `RuleFailure` are exported structs. They render
   as indented text and marshal to compact JSON.
