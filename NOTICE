@@ -1,0 +1,15 @@
+tarski
+Copyright 2026 Matt Joyce
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+tarski was cut, with its history, from the datalog package of Shearline
+(https://github.com/mattjoyce/shearline, commit c4f75ab), which had been cut
+from Anam's query engine (https://github.com/mattjoyce/anam). Its exact decimal
+numbers and builtin table were ported from Anam (origin/master 45e4a67). Both
+projects are by the same author and licensed under the Apache License, Version 2.0.
+
+testdata/anam.dl is copied unchanged from Anam's internal/query/rules/anam.dl,
+and the rule sets under testdata/ named for Shearline are copied from
+Shearline's policy/rbac.dl, both under the Apache License, Version 2.0. They are
+test fixtures, not part of the module's API.
