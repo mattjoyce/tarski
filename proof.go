@@ -129,7 +129,7 @@ func copyLiteral(l Literal) Literal {
 		if l.Aggregate.Body != nil {
 			agg.Body = make([]Literal, len(l.Aggregate.Body))
 			for i, inner := range l.Aggregate.Body {
-				agg.Body[i] = copyLiteral(inner)
+				agg.Body[i] = copyInner(inner)
 			}
 		}
 		out.Aggregate = &agg
@@ -140,4 +140,18 @@ func copyLiteral(l Literal) Literal {
 func copyAtom(a Atom) Atom {
 	a.Args = slices.Clone(a.Args)
 	return a
+}
+
+// copyInner copies a literal of an aggregate's body. An aggregate nested inside it,
+// which Compile refuses, is copied one level only: its own body is shared, not copied,
+// so a hand-built AST whose aggregate holds itself cannot recurse forever before the
+// shape check refuses it.
+func copyInner(l Literal) Literal {
+	if l.Aggregate == nil {
+		return copyLiteral(l)
+	}
+	nested := *l.Aggregate
+	out := copyLiteral(Literal{Negated: l.Negated, Atom: l.Atom, Compare: l.Compare})
+	out.Aggregate = &nested
+	return out
 }

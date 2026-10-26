@@ -68,3 +68,23 @@ func indexAt(tuples []Tuple, pos int) map[string][]int {
 	}
 	return by
 }
+
+// compact gives a builder whose input held duplicates storage sized to what it kept.
+// rebuild sizes the tuple slice and the set from the input count, and group copies a
+// relation's facts into one backing array, so without this the duplicates' room stays
+// reachable: 300,000 identical facts kept one tuple and 38 MB. The kept tuples are
+// copied into one exact array and the set into an exact map. Order is unchanged.
+func (b *relBuilder) compact(arity int) {
+	backing := make([]Const, 0, len(b.tuples)*arity)
+	tuples := make([]Tuple, len(b.tuples))
+	for i, t := range b.tuples {
+		start := len(backing)
+		backing = append(backing, t...)
+		tuples[i] = Tuple(backing[start:len(backing):len(backing)])
+	}
+	set := make(map[string]bool, len(b.set))
+	for k := range b.set {
+		set[k] = true
+	}
+	b.tuples, b.set = tuples, set
+}
