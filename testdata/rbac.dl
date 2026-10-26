@@ -1,0 +1,19 @@
+% The bounds on an evaluation (bytes derived, join steps) are per request, so the rules
+% must be too: every rule is seeded by the request's principal, action or resource, and a
+% decision derives only this principal's world, however many other principals are loaded.
+
+% deny(P, A, R): the consumer's denials. The base relation denied/3 carries them as
+% facts; a consumer rule set may add rules to deny/3 for derived denials. A deny rule
+% that reads allow/3 is a negation cycle and is refused at Load.
+deny(P, A, R) :- principal(P), action(A), resource(R), denied(P, A, R).
+
+% holds(P, R): P holds role R, directly or through inherits. Seeded by principal(P) so
+% the closure is computed for the requester alone.
+holds(P, R) :- principal(P), role(P, R).
+holds(P, R) :- holds(P, Q), inherits(Q, R).
+
+% permit(P, A, Pat): P holds a role that grants A over resources with prefix Pat.
+permit(P, A, Pat) :- principal(P), action(A), holds(P, Role), grants(Role, A, Pat).
+
+% allow(P, A, R): the request's resource is under a permitted prefix and not denied.
+allow(P, A, R) :- permit(P, A, Pat), resource(R), prefix(Pat, R), not deny(P, A, R).

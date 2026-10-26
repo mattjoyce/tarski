@@ -458,3 +458,81 @@ All fourteen questions in §7 were settled on the recommendation:
   - Q14: a goal that repeats a variable is refused.
 
 Matt asked for the build to go ahead in the five slices of §6.
+
+## 9. Evidence (2026-10-26)
+
+Measured on master at slice 5 on an Apple M1 with `go test -bench`; steps and bytes are
+`Result.Cost`, or the `*TooLarge` where a bound tripped. The tests beside the benchmarks
+(`bench_demand_test.go`, `bench_demand_anam_test.go`) hold demand's answers to full
+evaluation's, hash for hash, on the same bases.
+
+### 9.1 Shearline (§5 benchmark 1): met
+
+| run, one decision on 50,000 principals | ns/op | steps | derived bytes |
+|---|---|---|---|
+| seeded `rbac.dl`, full | 106,403 | 425 | 1,438 |
+| unseeded, full, `MaxBytes` 1 << 20 | 40,327,806 | 91,340 | 1,048,585, then `*TooLarge` |
+| unseeded, demand `allow_bbb` | 97,250 | 435 | 1,501 |
+
+Demand over the unseeded rules is within 1.03× of today's hand-seeded rules in steps and no
+slower in wall time; the cliff is reproduced, and demand under the same bound answers. For
+Shearline's shape demand replaces the seeding discipline.
+
+### 9.2 Anam (§5 benchmark 2): partly met
+
+The 20,000-entry ledger §5 named is infeasible for full evaluation even with the hand-bounded
+`instant` (nine minutes without finishing: `displaced/2` joins every `later/2` pair to every
+instant), so the benchmark runs 900 entries in 30 series (small) and 6,000 in 300 (medium).
+Wide full at medium runs under `MaxSteps` 10,000,000 and reports the work when it trips.
+
+| scale | run | ns/op | steps | derived bytes |
+|---|---|---|---|---|
+| small | hand-bounded, full | 87,845,917 | 494,536 | 1,319,382 |
+| small | hand-bounded, demand `regimen_ff` | 388,630,625 | 4,049,131 | 3,979,456 |
+| small | wide, demand | 373,542,459 | 4,048,261 | 3,979,456 |
+| small | wide, full | 10,492,431,500 | 240,035,625 | 34,915,013 |
+| medium | hand-bounded, full | 1,852,486,042 | 22,946,676 | 27,899,112 |
+| medium | hand-bounded, demand | 13,071,357,791 | 191,762,312 | 89,231,836 |
+| medium | wide, demand | 13,792,409,166 | 191,752,412 | 89,231,836 |
+| medium | wide, full, `MaxSteps` 10M | 9,439,686,542 | 10,000,001, tripped | 352,114,447 |
+
+- **Wide demand costs what hand-bounded demand costs.** Demand trims `instant` to the fact-times
+  `in_force` reaches, which was §3.5's point. Met.
+- **Wide demand against wide full:** 28× fewer ns and 59× fewer steps at small scale. At medium
+  wide full did not finish inside 10M steps, fewer than demand spends, so the ratio there is
+  unmeasured. Met where measurable.
+- **Demand against full on the hand-bounded `instant`:** 8.2× the steps and 4.4× the time at
+  small, 8.4× and 7.1× at medium, 3× the bytes at both. The 1.2× criterion is **not met**.
+
+Why, from the rewritten program (`Plan.Demand("regimen", "ff")` over `anam.dl` with the
+hand-bounded query): the goal binds nothing, so every binding comes sideways from body atoms.
+`m?displaced?bb(E, At) :- m?current?fb(At), before(E, At)` has a tuple per `before` pair, and
+`m?before?bb(F, At) :- m?displaced?bb(E, At), later(E, F)` is a join the size of full
+evaluation's `displaced` join; `before` and `displaced` are then derived again under those
+demand relations, and `before` under two adornments (`fb` and `bb`). That is the (1 + k) × A
+bound of §1.2 paid with no selectivity to pay for it: §5's "a goal with every position open
+gains nothing and pays the demand rules", except that here it gains on `instant` and pays on
+everything below it.
+
+Nothing in the engine is wrong: answers, hashes, proofs and why-not match full evaluation in
+every test, and the overhead is bounded as §1.2 says. The cost is the sideways
+information-passing choice of §2.1 (pass every bound variable) meeting a shape where the goal
+binds nothing. Options, for Matt:
+
+(a) Ship as is. Anam decides its own `instant/1` (Q11) and measures with `Result.Cost`; the
+    wide `instant` is now affordable, and the hand-bounded one stays cheaper.
+(b) A restricted passing strategy: pass only bindings reachable from the goal's bound positions
+    (here none below `instant`), which would leave `displaced` and `before` whole and keep the
+    `instant` trim. A change in the rewrite's meaning, so a Lamport × Thomas/Hunt pass first,
+    and the property tests must still hold.
+(c) Supplementary magic sets (Q13, deferred), which share the sideways joins instead of
+    repeating them.
+
+The v0.3.0 tag waits on this call.
+
+### 9.3 Hot loop (§5 item 3): met
+
+`benchstat`, eight runs each, master against slice 5: bytes and allocations per op identical in
+all four `BenchmarkEvaluate` cases; times within noise (geomean +1.1%; `Evaluate/proofs=true`
++4.8% at p=0.028 with a ±6% spread on the branch, for a change that copies two integers into
+the Result).

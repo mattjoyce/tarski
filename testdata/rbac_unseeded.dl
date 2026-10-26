@@ -1,0 +1,14 @@
+% testdata/rbac.dl without the request seeds (design/demand.md § 5): principal(P), action(A)
+% and resource(R) are gone from holds, deny and permit. resource(R) stays in allow, since
+% prefix/2 needs R bound by a positive atom. Evaluated in full these rules derive every
+% principal's roles and grants; evaluated for the goal allow(P, A, R) by Plan.Demand they
+% derive only the asking principal's.
+
+deny(P, A, R) :- denied(P, A, R).
+
+holds(P, R) :- role(P, R).
+holds(P, R) :- holds(P, Q), inherits(Q, R).
+
+permit(P, A, Pat) :- holds(P, Role), grants(Role, A, Pat).
+
+allow(P, A, R) :- permit(P, A, Pat), resource(R), prefix(Pat, R), not deny(P, A, R).

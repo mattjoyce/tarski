@@ -14,7 +14,17 @@ type Result struct {
 	groups    map[string]groupRecord            // nil unless Options.Proofs and an aggregate derived a tuple
 	plan      Plan                              // what WhyNot reads the rules and arities from
 	goal      *Goal                             // nil unless the plan was compiled for a goal (demand.go)
+	steps     int                               // steps charged to MaxSteps (see Cost)
+	bytes     int                               // derived bytes charged to MaxBytes (see Cost)
 }
+
+// Cost is the work the evaluation charged: steps (the count MaxSteps bounds: tuples visited
+// in joins, rule applications and builtin calls) and derived bytes (the count MaxBytes
+// bounds), on any Result, with or without a goal. A
+// demand evaluation's cost includes its helper tuples. It is an instrument for comparing
+// plans and watching cost follow the question, not a frozen value: it may change between
+// versions as the engine improves, and it is no part of an Answer or its hash.
+func (r Result) Cost() (steps, bytes int) { return r.steps, r.bytes }
 
 // Options bounds and shapes one evaluation.
 type Options struct {
@@ -83,7 +93,7 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	if err := ev.deadline(); err != nil {
 		return Result{}, err
 	}
-	return Result{relations: ev.sealed(plan), proofs: ev.proofs, groups: ev.groups, plan: plan, goal: goal}, nil
+	return Result{relations: ev.sealed(plan), proofs: ev.proofs, groups: ev.groups, plan: plan, goal: goal, steps: ev.steps, bytes: ev.bytes}, nil
 }
 
 // seed adds the goal's constants to the seed relation of a plan compiled for a goal,
