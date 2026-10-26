@@ -1,0 +1,102 @@
+package pressure
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/mattjoyce/shearline/policy"
+	"github.com/mattjoyce/tarski"
+	"testing"
+)
+
+func TestRedDecoder(t *testing.T) {
+	for _, raw := range [][]byte{[]byte(`"\ud800"`), {'"', 0xff, '"'}} {
+		var c tarski.Const
+		err := json.Unmarshal(raw, &c)
+		t.Logf("input=%q decoded=%q err=%v", raw, c.Text(), err)
+		if err != nil || c.Text() != "�" {
+			t.Fatal("unexpected result", err)
+		}
+	}
+	var c tarski.Const
+	err := c.UnmarshalJSON([]byte("1]"))
+	t.Logf("direct decoder 1]: value=%s err=%v", c.Text(), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRedPolicyBoundaries(t *testing.T) {
+	late, err := tarski.NewRuleSet("late", 1, `deny(P,A,R) :- principal(P), action(A), resource(R), context("hour",H), H >= 22.`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := policy.Load(policy.Config{Standing: []tarski.Fact{policy.Role("ana", "reader"), policy.Grant("reader", "read", "docs/")}, Sets: []tarski.RuleSet{policy.RBAC(), late}, Context: map[string]tarski.Kind{"hour": tarski.KindNumber}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, resource string
+		context        map[string]tarski.Const
+		allow          bool
+	}{
+		{"normal", "docs/x", map[string]tarski.Const{"hour": tarski.Int(23)}, false},
+		{"omitted context", "docs/x", nil, true},
+		{"traversal text", "docs/../secrets/x", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, e := p.Decide(context.Background(), policy.Request{Principal: "ana", Action: "read", Resource: tc.resource, Context: tc.context})
+			t.Logf("allow=%v error=%v", d.Allow, e)
+			if e != nil || d.Allow != tc.allow {
+				t.Fatal("unexpected result")
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d, err := p.Decide(ctx, policy.Request{Principal: "ana", Action: "read", Resource: "docs/x"})
+	if d.Allow || !errors.Is(err, context.Canceled) {
+		t.Fatal("cancellation failed closed check", d, err)
+	}
+}
+
+func TestBlueBoundsAndNegativeLimits(t *testing.T) {
+	prog, err := tarski.Parse(`out(X,Y) :- input(X), input(Y).`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := tarski.Schema{Arities: map[string]int{"input": 1}}
+	plan, err := tarski.Compile(schema, prog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := make([]tarski.Fact, 100)
+	for i := range facts {
+		facts[i] = tarski.Fact{Relation: "input", Tuple: tarski.Tuple{tarski.Int(int64(i))}}
+	}
+	base, err := tarski.NewBase(schema, facts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, opts := range []tarski.Options{{MaxSteps: 10}, {MaxBytes: 10}} {
+		r, e := tarski.Evaluate(context.Background(), plan, base, opts)
+		if !errors.Is(e, tarski.ErrTooLarge) {
+			t.Fatal("missing bound error", e)
+		}
+		if a, _ := r.Relation("out"); a.Len() != 0 {
+			t.Fatal("partial answer")
+		}
+	}
+	r, err := tarski.Evaluate(context.Background(), plan, base, tarski.Options{MaxSteps: -1, MaxBytes: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := r.Relation("out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("negative limits accepted: %d output tuples", a.Len())
+	if a.Len() != 10000 {
+		t.Fatal("unexpected result")
+	}
+}

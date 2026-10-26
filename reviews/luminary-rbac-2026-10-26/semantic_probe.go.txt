@@ -1,0 +1,11 @@
+package main
+import("context";"fmt"; t "github.com/mattjoyce/tarski")
+func main(){
+ cases:=[]struct{name,text string; schema t.Schema; facts []t.Fact}{
+ {"aggregate denial poison",`total(U,N) :- user(U), N = sum V : { weight(U,V) }. deny(U) :- total(U,N), N > 10. allow(U) :- user(U), not deny(U).`, t.Schema{Arities:map[string]int{"user":1,"weight":2}}, []t.Fact{{"user",t.Tuple{t.String("alice")}}, {"weight",t.Tuple{t.String("alice"),t.Int(20)}}}},
+ {"negated builtin wrong kind",`allow(U) :- resource(U), not prefix("secret/",U).`,t.Schema{Arities:map[string]int{"resource":1}},[]t.Fact{{"resource",t.Tuple{t.Int(123)}}}},
+ }
+ for _,c:=range cases {p,e:=t.Parse(c.text);must(e);plan,e:=t.Compile(c.schema,p);must(e); b,e:=t.NewBase(c.schema,c.facts...);must(e);run(c.name,plan,b);if c.name=="aggregate denial poison"{b,e=b.With(t.Fact{"weight",t.Tuple{t.String("alice"),t.String("invalid")}});must(e);run(c.name+" after malformed fact",plan,b)}}
+}
+func must(e error){if e!=nil{panic(e)}}
+func run(name string,p t.Plan,b t.Base){r,e:=t.Evaluate(context.Background(),p,b,t.Options{MaxSteps:10000,MaxBytes:10000});must(e);a,e:=r.Relation("allow");must(e);fmt.Printf("%s: allow=%s\n",name,a.Bytes());d,e:=p.Demand("allow","b");must(e);for _,v:= range []t.Const{t.String("alice"),t.Int(123)}{r,e=t.Evaluate(context.Background(),d,b,t.Options{MaxSteps:10000,MaxBytes:10000,Goal:&t.Goal{Relation:"allow",Args:[]t.Term{{Const:v}}}});must(e);a,e=r.Relation("allow");must(e);fmt.Printf("  demand %s: %s\n",v.Text(),a.Bytes())}}
