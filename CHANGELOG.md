@@ -4,6 +4,35 @@ Answer bytes, answer hashes, rule-set hashes and constants' canonical text are f
 (README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
 is listed here under its version.
 
+## Unreleased — v0.3.0
+
+Demand-driven evaluation (card 9; the design is `docs/design/demand.md`, Matt's decisions its
+§8, the evidence its §9). Additive: no answer, hash or golden byte changes.
+
+- **`Plan.Demand(relation, adornment)`** compiles a plan to answer one shape of goal;
+  `Options.Goal` carries each evaluation's constants and `Result.Goal` reports them. The goal's
+  relation is full evaluation's filtered to the goal's constants, byte for byte and hash for
+  hash; the hidden demand relations are never named. Proofs and why-not are given for the goal
+  relation only: valid and deterministic, not promised byte-identical to full evaluation's
+  first derivation.
+- **Fallback.** Where the magic rewrite would break stratification, or a relation is reached
+  under more than 64 binding patterns, demand is dropped for that relation and it is derived
+  whole. The answer is the same; only the work differs.
+- **Aggregates under demand.** Demand enters the braces through the group variables only, so
+  a group is never trimmed and its value is full evaluation's.
+- **`Result.Cost() (steps, bytes int)`**: the steps and derived bytes the evaluation charged,
+  on any Result. An instrument for comparing plans, not a frozen value and no part of an
+  Answer or its hash.
+- **Evidence** (design §9). Shearline's shape: demand over unseeded rules costs what the
+  hand-seeded policy costs (435 against 425 steps, 97 µs against 106 µs per decision on a
+  50,000-principal base) where unseeded full evaluation hits the `MaxBytes` cliff. Anam's
+  shape: demand over the wide `instant` costs what demand over the hand-bounded one costs and
+  28× less than full evaluation over the wide one, but about 8× the steps of full evaluation
+  over the hand-bounded `instant`, because with every goal position open the demand relations
+  for `displaced` and `before` are as large as the relations. Anam keeps its own `instant/1`
+  (design §8 Q11) and can measure with `Result.Cost`.
+- Hot loop: `BenchmarkEvaluate` bytes and allocations per op identical; times within noise.
+
 ## v0.2.2 — 2026-10-26
 
 Two more findings from the same pressure review, after it replayed v0.2.1. No answer, hash or

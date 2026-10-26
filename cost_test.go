@@ -76,14 +76,17 @@ func TestResult_CostIsWhatTheBoundsCharge(t *testing.T) {
 	}
 }
 
-func TestResult_CostIsZeroForNothingToDo(t *testing.T) {
+// Over an empty base nothing is derived, so no bytes are charged; each rule application
+// still costs one step (v0.2.1: every rule application is a step), so the two reach rules
+// cost two.
+func TestResult_CostOverAnEmptyBaseIsOneStepPerRule(t *testing.T) {
 	t.Parallel()
 	plan, err := tarski.Compile(testSchema, parse(t, reachRules))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, b := costOf(t, plan, newBase(t), tarski.Options{}); s != 0 || b != 0 {
-		t.Errorf("Cost over an empty base = %d, %d, want 0, 0", s, b)
+	if s, b := costOf(t, plan, newBase(t), tarski.Options{}); s != 2 || b != 0 {
+		t.Errorf("Cost over an empty base = %d, %d, want 2 (one step per rule application), 0", s, b)
 	}
 }
 

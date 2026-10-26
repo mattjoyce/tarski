@@ -300,6 +300,7 @@ type Goal struct {
 func (p Plan) Demand(relation, adornment string) (Plan, error)   // adornment: one b or f per position
 // Options.Goal *Goal: required on a plan from Demand, ErrInvalid on any other
 func (r Result) Goal() (g Goal, ok bool)                          // ok false for a full evaluation
+func (r Result) Cost() (steps, bytes int)                         // what the evaluation charged to MaxSteps and MaxBytes
 ```
 
 - **Answers.** On a demand Result, `Relation(goal relation)` is full evaluation's relation
@@ -315,7 +316,10 @@ func (r Result) Goal() (g Goal, ok bool)                          // ok false fo
   records first; a why-not fails at the same literal per rule, with bindings and blocking
   witness possibly different where several exist.
 - **Bounds.** Demand relations' tuples, the goal's seed included, are charged to `MaxBytes` and
-  their joins to `MaxSteps`.
+  their joins to `MaxSteps`. `Result.Cost` reports both counts on any Result, with or without a
+  goal, so a consumer can compare a demand plan with its full plan on its own base. It is an
+  instrument: it may change between versions as the engine improves, and it is no part of an
+  Answer or its hash.
 - **Fallback.** Where the magic rewrite would break stratification, demand is dropped for one
   relation and the rewrite runs again, until it stratifies: in the first strongly connected
   component holding a negative edge, the source relation of the first demand relation by

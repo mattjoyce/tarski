@@ -14,12 +14,13 @@ type Result struct {
 	groups    map[string]groupRecord            // nil unless Options.Proofs and an aggregate derived a tuple
 	plan      Plan                              // what WhyNot reads the rules and arities from
 	goal      *Goal                             // nil unless the plan was compiled for a goal (demand.go)
-	steps     int                               // join steps charged to MaxSteps (see Cost)
+	steps     int                               // steps charged to MaxSteps (see Cost)
 	bytes     int                               // derived bytes charged to MaxBytes (see Cost)
 }
 
-// Cost is the work the evaluation charged: join steps (the count MaxSteps bounds) and
-// derived bytes (the count MaxBytes bounds), on any Result, with or without a goal. A
+// Cost is the work the evaluation charged: steps (the count MaxSteps bounds: tuples visited
+// in joins, rule applications and builtin calls) and derived bytes (the count MaxBytes
+// bounds), on any Result, with or without a goal. A
 // demand evaluation's cost includes its helper tuples. It is an instrument for comparing
 // plans and watching cost follow the question, not a frozen value: it may change between
 // versions as the engine improves, and it is no part of an Answer or its hash.
