@@ -84,8 +84,8 @@ func (p Plan) HasAggregates() bool
 func (p Plan) Demand(relation, adornment string) (Plan, error)
 
 type Options struct {
-    MaxBytes int     // bound over derived tuples' JSON text; 0 is no bound
-    MaxSteps int     // bound over the work; 0 is no bound; see the godoc for what a step is
+    MaxBytes int     // bound over derived tuples' JSON text; 0 is no bound, negative is ErrInvalid
+    MaxSteps int     // bound over the work; 0 is no bound, negative is ErrInvalid; see the godoc for what a step is
     Proofs   bool    // record the first derivation of each derived tuple
     Goal     *Goal   // required on a plan from Demand, ErrInvalid on any other
 }
@@ -144,6 +144,9 @@ func (s RuleSet) Verify() error
 - **Strings are valid UTF-8.** The lexer refuses a literal that is not, `NewBase` and `With`
   refuse a fact that is not, and `Compile` refuses a hand-built constant that is not. JSON would
   fold invalid bytes into U+FFFD, and two distinct constants would share an answer hash.
+  `Const.UnmarshalJSON` holds JSON to the same domain: invalid UTF-8, a lone surrogate escape and
+  anything after the one value are ErrSyntax, never U+FFFD. `Const.MarshalJSON` refuses a string
+  that is not valid UTF-8 with ErrInvalid rather than writing U+FFFD.
 - **Escapes.** A string literal reads JSON's escapes and Go's (`\/`, a surrogate pair, `\x41`,
   `\U0001F600`). A lone surrogate reads as neither.
 - **Numbers are exact decimals.** `Number` reads JSON's number grammar only (no plus, leading

@@ -75,7 +75,8 @@ type RuleFailure struct {
 }
 
 // WhyNot explains a tuple's absence. ok is false when t is in the result (ask Proof),
-// when the relation or the tuple's arity is not the plan's, or when the evaluation ran
+// when the relation or the tuple's arity is not the plan's, when t holds a string that
+// is not valid UTF-8 (no fact can, see String), or when the evaluation ran
 // without Options.Proofs, or when a consumer builtin panicked while the rules were
 // walked (the panic does not escape). maxDepth bounds the recursion into Because; 0
 // means the engine's default. On a Result evaluated for a goal, ok is also false unless
@@ -86,7 +87,8 @@ type RuleFailure struct {
 func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) {
 	rel, found := r.relations[name]
 	arity, known := r.plan.Arity(name)
-	if r.proofs == nil || !found || !known || len(t) != arity || rel.has(t) || !r.covers(name, t) {
+	if r.proofs == nil || !found || !known || len(t) != arity || rel.has(t) || !r.covers(name, t) ||
+		checkUTF8(Fact{Relation: name, Tuple: t}) != nil {
 		return Absence{}, false
 	}
 	goal := make([]Term, len(t))

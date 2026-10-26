@@ -41,11 +41,13 @@ func (r Result) Cost() (steps, bytes int) { return r.steps, r.bytes }
 type Options struct {
 	// MaxBytes is a bound over approximately the JSON text of every derived tuple
 	// (lengths unescaped), intermediate relations included, since derived relations can
-	// be larger than the input. Zero is no bound; over it, Evaluate returns *TooLarge.
+	// be larger than the input. Zero is no bound and a negative bound is ErrInvalid; over
+	// it, Evaluate returns *TooLarge.
 	MaxBytes int
 	// MaxSteps bounds the work over the whole evaluation. MaxBytes cannot see a rule
 	// that visits a great deal and derives little, such as a cross product of
-	// duplicates. Zero is no bound; over it, Evaluate returns *TooLarge.
+	// duplicates. Zero is no bound and a negative bound is ErrInvalid; over it, Evaluate
+	// returns *TooLarge.
 	//
 	// A step is one of:
 	//   - a candidate tuple visited by a positive join, including the candidates inside
@@ -76,6 +78,19 @@ type Options struct {
 	Goal *Goal
 }
 
+// bounded refuses a negative bound. Every check against a bound reads it only when it
+// is positive, so a negative one would silently mean "no bound": it is ErrInvalid
+// instead, and zero stays the one way to ask for none.
+func (o Options) bounded() error {
+	if o.MaxBytes < 0 {
+		return fmt.Errorf("%w: Options.MaxBytes is %d; a bound is positive, or zero for none", ErrInvalid, o.MaxBytes)
+	}
+	if o.MaxSteps < 0 {
+		return fmt.Errorf("%w: Options.MaxSteps is %d; a bound is positive, or zero for none", ErrInvalid, o.MaxSteps)
+	}
+	return nil
+}
+
 // Evaluate runs a plan over a base to its fixpoint, stratum by stratum, semi-naive
 // within each: after the first round only the tuples new in the last round are
 // joined again. It reads values and writes nothing, and the base is never changed, so
@@ -91,6 +106,9 @@ type Options struct {
 func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("tarski: evaluation stopped: %w", err)
+	}
+	if err := opts.bounded(); err != nil {
+		return Result{}, err
 	}
 	if err := plan.accepts(base); err != nil {
 		return Result{}, err

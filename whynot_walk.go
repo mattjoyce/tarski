@@ -88,7 +88,8 @@ func (w *walker) positive(i int, l Literal, env map[string]Const) bool {
 		return false
 	}
 	matched := false
-	for _, idx := range matching(source{val: rel}, l.Atom.Args, env) {
+	for h, k := matching(source{val: rel}, l.Atom.Args, env), 0; k < h.n; k++ {
+		idx := h.at(k)
 		if w.x.spend() {
 			return false
 		}
@@ -116,7 +117,8 @@ func (w *walker) probe(rel *relation, args []Term, env map[string]Const) (t Tupl
 	if w.x.spendN(scanCost(rel, args, env)) {
 		return nil, false, true
 	}
-	for _, idx := range matching(source{val: rel}, args, env) {
+	for h, k := matching(source{val: rel}, args, env), 0; k < h.n; k++ {
+		idx := h.at(k)
 		if w.x.spend() {
 			return nil, false, true
 		}
