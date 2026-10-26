@@ -41,7 +41,8 @@ func (ev *evaluator) join(r *rule, i int, env map[string]Const, delta *relBuilde
 			return err
 		}
 	}
-	for _, idx := range matching(rel, l.Atom.Args, env) {
+	for h, k := matching(rel, l.Atom.Args, env), 0; k < h.n; k++ {
+		idx := h.at(k)
 		if ev.over != nil {
 			return ev.over
 		}
@@ -137,7 +138,8 @@ func (ev *evaluator) exists(head string, rel source, args []Term, env map[string
 			return false, err
 		}
 	}
-	for _, idx := range matching(rel, args, env) {
+	for h, k := matching(rel, args, env), 0; k < h.n; k++ {
+		idx := h.at(k)
 		if err := ev.step(head); err != nil {
 			return false, err
 		}

@@ -8,8 +8,14 @@ package tarski
 type relBuilder struct {
 	tuples []Tuple
 	set    map[string]bool
-	idx    map[int]map[string][]int
-	idxLen int
+	idx    []builderIndex // by argument position, grown to the highest one asked for
+}
+
+// builderIndex is a builder's index at one argument position: the tuple indexes by
+// the key of their argument there, over the first n tuples.
+type builderIndex struct {
+	by map[string][]int
+	n  int
 }
 
 func newRelBuilder() *relBuilder {
@@ -29,18 +35,27 @@ func (b *relBuilder) add(t Tuple) bool {
 
 func (b *relBuilder) has(t Tuple) bool { return b.set[t.key()] }
 
-// candidates is the indexes of the tuples whose argument pos is c. The index is built
-// on first use and dropped when the relation grows.
+// candidates is the indexes of the tuples whose argument pos is c. The index at pos is
+// built on first use and extended, not rebuilt, when the relation has grown: tuples are
+// only appended, so each tuple is indexed once per position. Indexing a derived
+// relation therefore costs work in proportion to the tuples it derived, each already
+// charged to MaxBytes, however many rounds read it.
 func (b *relBuilder) candidates(pos int, c Const) []int {
-	if b.idx == nil || b.idxLen != len(b.tuples) {
-		b.idx, b.idxLen = map[int]map[string][]int{}, len(b.tuples)
+	for len(b.idx) <= pos {
+		b.idx = append(b.idx, builderIndex{})
 	}
-	by, ok := b.idx[pos]
-	if !ok {
-		by = indexAt(b.tuples, pos)
-		b.idx[pos] = by
+	x := &b.idx[pos]
+	if x.n < len(b.tuples) {
+		if x.by == nil {
+			x.by = map[string][]int{}
+		}
+		for i := x.n; i < len(b.tuples); i++ {
+			k := b.tuples[i][pos].key()
+			x.by[k] = append(x.by[k], i)
+		}
+		x.n = len(b.tuples)
 	}
-	return by[c.key()]
+	return x.by[c.key()]
 }
 
 // seal is the relation value the builder has made, and the builder must not be used

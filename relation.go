@@ -66,19 +66,33 @@ func (s source) candidates(pos int, c Const) []int {
 	return s.bld.candidates(pos, c)
 }
 
+// hits is the tuples a join tries, by index: the listed ones, or, when list is nil,
+// every index below n. A scan of a whole relation lists nothing, so finding its
+// candidates allocates nothing however large the relation is: the memory a join takes
+// follows the steps it is charged, not the size of what it might have visited.
+type hits struct {
+	list []int
+	n    int
+}
+
+func (h hits) at(k int) int {
+	if h.list == nil {
+		return k
+	}
+	return h.list[k]
+}
+
 // matching is the tuples of rel worth trying against args under env: the ones an
-// index on the first bound argument selects, or all of them when none is bound.
-func matching(rel source, args []Term, env map[string]Const) []int {
+// index on the first bound argument selects, or all of them when none is bound. A
+// scan is all the tuples rel holds now; a tuple added during the walk is not in it.
+func matching(rel source, args []Term, env map[string]Const) hits {
 	for pos, a := range args {
 		if c, ok := constant(a, env); ok {
-			return rel.candidates(pos, c)
+			list := rel.candidates(pos, c)
+			return hits{list: list, n: len(list)}
 		}
 	}
-	all := make([]int, len(rel.tuples()))
-	for i := range all {
-		all[i] = i
-	}
-	return all
+	return hits{n: len(rel.tuples())}
 }
 
 // bind unifies t with args, extending env with the variables it binds and

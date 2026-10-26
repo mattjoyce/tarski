@@ -3,10 +3,14 @@ package tarski
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Kind is the type of a constant. Datalog sees the three scalar kinds JSON has, and
@@ -90,24 +94,37 @@ func (c Const) Kind() Kind { return c.kind }
 // or true/false.
 func (c Const) Text() string { return c.s }
 
-// MarshalJSON writes the constant as the JSON value it came from.
+// MarshalJSON writes the constant as the JSON value it came from. A string that is not
+// valid UTF-8 is outside the engine's string domain (see String) and is ErrInvalid:
+// JSON would write it as U+FFFD, the text of a different constant.
 func (c Const) MarshalJSON() ([]byte, error) {
 	if c.kind == KindString {
+		if !utf8.ValidString(c.s) {
+			return nil, fmt.Errorf("%w: a string constant that is not valid UTF-8 has no JSON text", ErrInvalid)
+		}
 		return json.Marshal(c.s)
 	}
 	return []byte(c.s), nil
 }
 
 // UnmarshalJSON reads a constant back from the JSON MarshalJSON wrote, so an answer
-// decoded on the client holds the constants the server's did.
+// decoded on the client holds the constants the server's did. b is exactly one JSON
+// value, whitespace aside, in the engine's string domain: text that is not valid UTF-8,
+// or a \u escape of half a surrogate pair, is ErrSyntax, never read as U+FFFD.
 func (c *Const) UnmarshalJSON(b []byte) error {
+	if !utf8.Valid(b) {
+		return fmt.Errorf("%w: a constant is valid UTF-8, but %q is not", ErrSyntax, b)
+	}
+	if loneSurrogate(b) {
+		return fmt.Errorf("%w: %s escapes half a UTF-16 surrogate pair, which is no character", ErrSyntax, b)
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return err
 	}
-	if dec.More() {
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%w: a constant is one JSON value, but %s goes on after the first", ErrSyntax, b)
 	}
 	switch t := v.(type) {
@@ -125,6 +142,45 @@ func (c *Const) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("%w: a constant is a string, a number or a boolean, not %s", ErrSyntax, b)
 	}
 	return nil
+}
+
+// loneSurrogate reports whether the JSON text b holds a \u escape of a UTF-16 surrogate
+// that is not one half of a pair, a high surrogate escape followed at once by a low one.
+// encoding/json reads such an escape as U+FFFD, so two different texts would decode to
+// one constant.
+func loneSurrogate(b []byte) bool {
+	high := false // the last escape read was a high surrogate, awaiting its low half
+	for i := 0; i < len(b); i++ {
+		r, ok := uEscape(b, i)
+		switch {
+		case ok && utf16.IsSurrogate(r) && r < 0xdc00:
+			if high {
+				return true
+			}
+			high = true
+			i += len(`\u0000`) - 1
+		case ok && utf16.IsSurrogate(r):
+			if !high {
+				return true
+			}
+			high = false
+			i += len(`\u0000`) - 1
+		case high:
+			return true
+		case b[i] == '\\':
+			i++ // the escaped character: \\u is a backslash and a u, not an escape
+		}
+	}
+	return high
+}
+
+// uEscape is the code unit of the \u escape at b[i], and false when none starts there.
+func uEscape(b []byte, i int) (rune, bool) {
+	if i+len(`\u0000`) > len(b) || b[i] != '\\' || b[i+1] != 'u' {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(string(b[i+2:i+6]), 16, 16)
+	return rune(n), err == nil
 }
 
 // key is the constant's identity for sets and joins. The kind prefix keeps the
