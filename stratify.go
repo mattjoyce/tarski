@@ -11,6 +11,16 @@ import (
 // and no less than any it depends on positively. A cycle through a negation has no
 // such order and is refused.
 func stratify(rules []Rule, idb map[string]bool, table builtinTable) ([][]rule, error) {
+	stratum, err := levels(rules, idb)
+	if err != nil {
+		return nil, err
+	}
+	return group(rules, stratum, idb, table), nil
+}
+
+// levels is each derived relation's stratum, or the refusal of a cycle through a
+// negation or an aggregate.
+func levels(rules []Rule, idb map[string]bool) (map[string]int, error) {
 	deps := dependencies(rules, idb)
 	comps := components(deps)
 	stratum := map[string]int{}
@@ -41,7 +51,7 @@ func stratify(rules []Rule, idb map[string]bool, table builtinTable) ([][]rule, 
 			stratum[n] = level
 		}
 	}
-	return group(rules, stratum, idb, table), nil
+	return stratum, nil
 }
 
 // edge is one dependency of a relation's rules on a derived relation. negative marks a
@@ -147,30 +157,52 @@ func components(deps map[string][]edge) [][]string {
 	return out
 }
 
-// group orders each rule's body for evaluation and places it in its head's stratum. An
-// aggregate's body is ordered too, on its own with its group variables already bound,
-// and kept beside the literal in rule.aggs. An aggregate literal is never a recursive
-// position: every relation it reads is in a strictly lower stratum, so it is complete
-// before the stratum runs and the aggregate's value cannot change inside it.
+// group orders each rule's body for evaluation (prepare) and places it in its head's
+// stratum (place).
 func group(rules []Rule, stratum map[string]int, idb map[string]bool, table builtinTable) [][]rule {
+	prs := make([]rule, len(rules))
+	for i, r := range rules {
+		prs[i] = prepare(r, table)
+	}
+	return place(prs, stratum, idb)
+}
+
+// prepare orders a rule's body for evaluation. An aggregate's body is ordered too, on
+// its own with its group variables already bound, and kept beside the literal in
+// rule.aggs.
+func prepare(r Rule, table builtinTable) rule {
+	groups := aggregateGroups(r)
+	pr := rule{Rule: r, ordered: order(r.Body, table, map[string]bool{}, groups), demand: noDemand}
+	for i, l := range pr.ordered {
+		if l.Aggregate == nil {
+			continue
+		}
+		if pr.aggs == nil {
+			pr.aggs = make([]*aggPlan, len(pr.ordered))
+		}
+		pr.aggs[i] = newAggPlan(r.Head.Name, l.Aggregate, groups[l.Aggregate], table)
+	}
+	return pr
+}
+
+// place puts rules whose bodies are already ordered into their heads' strata, in the
+// order given, and marks each rule's recursive positions: the positive atoms over a
+// relation of its own stratum. An aggregate literal is never a recursive position:
+// every relation it reads is in a strictly lower stratum, so it is complete before the
+// stratum runs and the aggregate's value cannot change inside it. A rule rewritten for a
+// goal comes here with its ordered body made by the rewrite (demand.go).
+func place(prs []rule, stratum map[string]int, idb map[string]bool) [][]rule {
 	top := 0
 	for _, s := range stratum {
 		top = max(top, s)
 	}
 	strata := make([][]rule, top+1)
-	for _, r := range rules {
-		s := stratum[r.Head.Name]
-		groups := aggregateGroups(r)
-		pr := rule{Rule: r, ordered: order(r.Body, table, map[string]bool{}, groups)}
+	for _, pr := range prs {
+		s := stratum[pr.Head.Name]
+		pr.recursive = nil
 		for i, l := range pr.ordered {
 			if l.Atom != nil && !l.Negated && idb[l.Atom.Name] && stratum[l.Atom.Name] == s {
 				pr.recursive = append(pr.recursive, i)
-			}
-			if l.Aggregate != nil {
-				if pr.aggs == nil {
-					pr.aggs = make([]*aggPlan, len(pr.ordered))
-				}
-				pr.aggs[i] = newAggPlan(r.Head.Name, l.Aggregate, groups[l.Aggregate], table)
 			}
 		}
 		strata[s] = append(strata[s], pr)

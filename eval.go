@@ -57,13 +57,13 @@ func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, 
 	}
 	for _, stratum := range plan.strata {
 		if err := ev.stratum(stratum); err != nil {
-			return Result{}, err
+			return Result{}, plan.visible(err)
 		}
 	}
 	// A bound crossed by the last tuple of the last round raises no error inside the
 	// join; it is raised here, so MaxBytes is never exceeded with a nil error.
 	if ev.over != nil {
-		return Result{}, ev.over
+		return Result{}, plan.visible(ev.over)
 	}
 	// A cancellation that landed after the last look at the deadline is honoured
 	// here, so a cancelled evaluation never returns a result.
@@ -220,7 +220,8 @@ type bodyTuple struct {
 	tuple    Tuple
 }
 
-// record keeps the derivation that just added t. apply reaches it only for a tuple
+// record keeps the derivation that just added t, naming the rule as written: a rule
+// rewritten for a goal names its source. apply reaches it only for a tuple
 // neither the database nor this round had, so what is kept is the first derivation. A
 // body tuple was in the database or the last round's delta, hence derived strictly
 // earlier, which is what keeps a proof acyclic.
@@ -230,7 +231,11 @@ func (ev *evaluator) record(r *rule, t Tuple) {
 		by = map[string]*derivation{}
 		ev.proofs[r.Head.Name] = by
 	}
-	d := &derivation{rule: &r.Rule}
+	src := &r.Rule
+	if r.source != nil {
+		src = r.source
+	}
+	d := &derivation{rule: src}
 	if len(ev.stack) > 0 {
 		d.body = append([]bodyTuple(nil), ev.stack...)
 	}
