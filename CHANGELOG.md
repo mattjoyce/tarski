@@ -6,8 +6,8 @@ is listed here under its version.
 
 ## Unreleased (v0.2.0)
 
-Aggregates (card 6), built on master. Tagged once Matt has settled the open questions in
-`docs/design/aggregates.md` § 11; until then any of the semantics below may change.
+Aggregates (card 6), built on master. The semantics are settled (design § 13, decided with Matt
+2026-10-26). Tagged once the consumer steps below are done.
 
 Before a consumer adopts v0.2 (Go resolves the Shearline/Anam/Ductile diamond to one tarski, so
 Anam taking v0.2 moves Shearline too):

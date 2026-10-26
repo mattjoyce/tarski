@@ -500,3 +500,23 @@ count distinct instants rather than readings. This is open question 1 in §11, n
 evidence; it stays with Matt. Until then the oracle script must skip, or name every variable
 in, a multi-literal aggregate body that contains `_`. To get Soufflé's projection in tarski,
 name the projection as a rule: `w(X) :- t(X), s(X, _).` then `count : { w(X) }`.
+
+## 13. Decided with Matt (2026-10-26)
+
+All ten questions in §11 were settled on the recommendation:
+
+- **Q1, witnesses:** distinct solutions of the inner body, every `_` fresh, for every body shape.
+  The Soufflé inconsistency in §12.1 is a known oracle delta.
+- **Q6, min and max over strings:** allowed, compared lexically. Also a known oracle delta.
+- **The rest, accepted as built:**
+  - Mixed kinds derive no tuple, with a why-not.
+  - Empty count and sum are 0; empty min and max derive nothing.
+  - Proof groups keep 64 witnesses, and `GroupSize` gives the full count.
+  - A sum overflow is `*TooLarge` with `BoundNumber`.
+  - `avg` and `mean` are deferred and refused.
+  - `HasAggregates` is on `Plan` only.
+  - Several aggregates per rule are allowed. A group variable may not be another aggregate's
+    Result.
+
+v0.2.0 is tagged once Shearline refuses aggregates in `policy.Load` and Anam's oracle script
+skips the deltas (CHANGELOG § Unreleased).

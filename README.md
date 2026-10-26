@@ -88,8 +88,9 @@ outputs" and the answer hash, and that is the consumer's fault, not the engine's
 Each step ships only when a consumer actually needs it.
 
 1. **Aggregates.** `count`, `sum`, `min` and `max` over a grouped body, stratified like negation
-   and charged to the bounds. Anam needs them first. Built on master; v0.2.0 is tagged once the
-   open questions in [`docs/design/aggregates.md`](docs/design/aggregates.md) § 11 are settled.
+   and charged to the bounds. Anam needs them first. Built on master and settled with Matt
+   ([`docs/design/aggregates.md`](docs/design/aggregates.md) § 13); v0.2.0 is tagged once Shearline
+   and Anam are ready for it.
 2. **Demand-driven evaluation.** Given a goal, derive only the tuples that can reach it (magic
    sets). Answers do not change, so every existing test and hash still holds.
 3. **`under/3`**, a prefix match that respects segment separators, when a consumer's names need
