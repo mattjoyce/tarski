@@ -16,7 +16,8 @@ meant what it said.
 - **Strict JSON constants.** `Const.UnmarshalJSON` refuses invalid UTF-8, a lone surrogate
   escape and trailing text (`1]` called directly) with ErrSyntax; each used to decode, the first
   two as U+FFFD. `Const.MarshalJSON` refuses a string that is not valid UTF-8 with ErrInvalid.
-  Answers never held one, since every entry point already refuses them.
+  Answers never held one, since every entry point already refuses them; `Result.WhyNot` now
+  refuses such a tuple too (ok false), so an Absence never holds one either.
 - **A join's memory follows its steps.** An unbound literal no longer builds a list of every
   candidate index before the first step is charged: a refused scan of 100,000 facts under
   `MaxSteps: 1` allocated about 800 KB and now allocates what one over 1,000 does. A derived

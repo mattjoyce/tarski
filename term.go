@@ -122,7 +122,7 @@ func (c *Const) UnmarshalJSON(b []byte) error {
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrSyntax, err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%w: a constant is one JSON value, but %s goes on after the first", ErrSyntax, b)

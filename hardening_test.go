@@ -63,6 +63,8 @@ func TestConst_UnmarshalJSONIsStrict(t *testing.T) {
 		{"high then text", []byte(`"\ud83dx"`)},
 		{"high then high", []byte(`"\ud83d\ud83d"`)},
 		{"low then high", []byte(`"\ude00\ud83d"`)},
+		{"short escape", []byte(`"\u12"`)},
+		{"not json", []byte(`nope`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var direct tarski.Const
@@ -140,5 +142,29 @@ func TestEvaluate_ScanAllocatesNoCandidateList(t *testing.T) {
 	small, large := allocated(1000), allocated(100000)
 	if large > 2*small+16<<10 {
 		t.Fatalf("a refused scan allocated %d bytes over 100,000 facts and %d over 1,000", large, small)
+	}
+}
+
+// WhyNot explains only a tuple in the engine's string domain: one holding invalid
+// UTF-8 could be no fact, and its Absence would have no JSON text.
+func TestWhyNot_RefusesInvalidUTF8(t *testing.T) {
+	t.Parallel()
+	plan, err := tarski.Compile(testSchema, parse(t, reachRules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tarski.Evaluate(context.Background(), plan, newBase(t, chain(3)...), tarski.Options{Proofs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := res.WhyNot("reaches", tarski.Tuple{tarski.String("\xff"), tarski.String("b")}, 0); ok {
+		t.Fatal("WhyNot explained a tuple holding invalid UTF-8")
+	}
+	abs, ok := res.WhyNot("reaches", tarski.Tuple{tarski.String("\ufffd"), tarski.String("b")}, 0)
+	if !ok {
+		t.Fatal("WhyNot refused U+FFFD, a valid string")
+	}
+	if _, err := json.Marshal(abs); err != nil {
+		t.Fatalf("Marshal(Absence) = %v", err)
 	}
 }
