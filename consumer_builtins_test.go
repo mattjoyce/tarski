@@ -153,11 +153,11 @@ func TestConsumerBuiltin_Refusals(t *testing.T) {
 		{"no Holds", with("shorter", noHolds), ok, "builtin shorter has no Holds"},
 		{"a head", wordSchema, `shorter(X, Y) :- pair(X, Y).`, "shorter is a built-in and cannot be the head of a rule"},
 		{"a declaration", wordSchema, `shorter/2.`, "shorter is a built-in and cannot be declared"},
-		{"wrong arity", wordSchema, `w(X) :- word(X), shorter(X).`, "shorter has 1 arguments, but shorter is shorter/2"},
-		{"an unbound argument", wordSchema, `w(X) :- word(X), shorter(X, Y).`, "Y in shorter must be bound by a positive body atom"},
+		{"wrong arity", wordSchema, `w(X) :- word(X), shorter(X).`, "shorter has 1 arguments, but shorter takes 2: shorter(A, B)"},
+		{"an unbound argument", wordSchema, `w(X) :- word(X), shorter(X, Y).`, "Y, argument B of shorter(A, B), must be bound by a positive body atom"},
 		{"bound only by a negation", wordSchema, `w(X) :- word(X), not pair(X, Y), shorter(X, Y).`, "Y in not pair is not bound"},
 		{"anonymous", wordSchema, `w(X) :- word(X), shorter(X, _).`, "_ in shorter tests nothing"},
-		{"a constant its Check refuses", wordSchema, `w(X) :- word(X), shorter(X, "").`, "shorter: nothing is shorter than the empty string"},
+		{"a constant its Check refuses", wordSchema, `w(X) :- word(X), shorter(X, "").`, "shorter(A, B): nothing is shorter than the empty string"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

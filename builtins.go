@@ -149,7 +149,7 @@ func checkBuiltins(schema Schema) error {
 // over the constants written in it.
 func checkBuiltinAtom(a Atom, b Builtin) error {
 	if len(b.Args) != len(a.Args) {
-		return fmt.Errorf("%s has %d arguments, but %s is %s/%d", a.Name, len(a.Args), a.Name, a.Name, len(b.Args))
+		return fmt.Errorf("%s has %d arguments, but %s takes %d: %s", a.Name, len(a.Args), a.Name, len(b.Args), b.signature(a.Name))
 	}
 	if b.Check == nil {
 		return nil
@@ -162,9 +162,26 @@ func checkBuiltinAtom(a Atom, b Builtin) error {
 		}
 	}
 	if err := b.Check(consts); err != nil {
-		return fmt.Errorf("%s: %w", a.Name, err)
+		return fmt.Errorf("%s: %w", b.signature(a.Name), err)
 	}
 	return nil
+}
+
+// signature is the builtin as a program would write it, such as within(A, B, Days),
+// from the argument names its author declared. Every refusal about a builtin shows it,
+// so the rule can be fixed from the message alone.
+func (b Builtin) signature(name string) string {
+	names := make([]string, len(b.Args))
+	for i, a := range b.Args {
+		names[i] = a.Name
+	}
+	return name + "(" + strings.Join(names, ", ") + ")"
+}
+
+// argumentText says which argument of the builtin is meant, as "argument B of
+// within(A, B, Days)", for the i-th position (counting from 0).
+func (b Builtin) argumentText(name string, i int) string {
+	return fmt.Sprintf("argument %s of %s", b.Args[i].Name, b.signature(name))
 }
 
 // builtinPanicked is the error for a builtin whose Holds panicked on args.
