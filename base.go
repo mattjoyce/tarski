@@ -67,7 +67,13 @@ func (b Base) With(facts ...Fact) (Base, error) {
 func (b Base) group(facts []Fact) (map[string][]Tuple, error) {
 	counts := map[string]int{}
 	for _, f := range facts {
-		counts[f.Relation]++
+		// Only a fact the schema allows, at its relation's width, is counted, so the
+		// room made below is at most the constants the caller passed: an absurd arity
+		// with a few short facts cannot ask for an allocation it never fills (the
+		// facts are refused in the loop that follows).
+		if n, ok := b.arities[f.Relation]; ok && len(f.Tuple) == n {
+			counts[f.Relation]++
+		}
 	}
 	added := make(map[string][]Tuple, len(counts))
 	backing := make(map[string][]Const, len(counts))

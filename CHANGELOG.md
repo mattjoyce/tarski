@@ -4,10 +4,25 @@ Answer bytes, answer hashes, rule-set hashes and constants' canonical text are f
 (README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
 is listed here under its version.
 
-## Unreleased (v0.2.0)
+## v0.2.1 — 2026-10-26
 
-Aggregates (card 6), built on master. The semantics are settled (design § 13, decided with Matt
-2026-10-26). Tagged once the consumer steps below are done.
+Fixes from an external pressure review of v0.2.0 (board agent tarski-pressure). No answer,
+hash or golden byte changes.
+
+- **No panic on an absurd arity.** `NewBase` sized its preallocation by arity times count before
+  checking fact widths, so a few short facts under a huge declared arity panicked. It now counts
+  only well-formed facts, so the room it makes is bounded by the input.
+- **No stack overflow on a cyclic aggregate.** A hand-built `Aggregate` whose body holds itself
+  made `Compile` recurse forever while copying the program. A nested aggregate, which Compile
+  refuses, is now copied one level only, and the refusal is reached.
+- **Guard-only rules are bounded.** A rule with no positive atom called its guards (and a consumer
+  builtin's `Holds`) with no join step charged. Every rule application now costs a step, so
+  `MaxSteps` bounds the calls as README § Consumer builtins promises. Step counts rise by one per
+  rule application; answers are unchanged.
+
+## v0.2.0 — 2026-10-26
+
+Aggregates (card 6). The semantics were settled with Matt (design § 13).
 
 Before a consumer adopts v0.2 (Go resolves the Shearline/Anam/Ductile diamond to one tarski, so
 Anam taking v0.2 moves Shearline too):

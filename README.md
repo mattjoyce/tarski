@@ -16,7 +16,7 @@ knows no vocabulary: `role`, `entry` and `grants` are just strings to it.
 
 The language is small: rules, facts, stratified negation, comparisons, relation declarations, and
 three string built-ins (`prefix`, `suffix`, `contains`), beside which a consumer may declare its
-own guards. On master, ahead of v0.2, there are also aggregates in Soufflé's syntax:
+own guards. Since v0.2 there are also aggregates in Soufflé's syntax:
 `N = count : { ... }`, and `sum`, `min` and `max` over a variable, stratified like negation. There
 are no function symbols and no arithmetic in rule heads, so every program terminates.
 
@@ -88,9 +88,8 @@ outputs" and the answer hash, and that is the consumer's fault, not the engine's
 Each step ships only when a consumer actually needs it.
 
 1. **Aggregates.** `count`, `sum`, `min` and `max` over a grouped body, stratified like negation
-   and charged to the bounds. Anam needs them first. Built on master and settled with Matt
-   ([`docs/design/aggregates.md`](docs/design/aggregates.md) § 13); v0.2.0 is tagged once Shearline
-   and Anam are ready for it.
+   and charged to the bounds. Anam needs them first. Released in v0.2.0
+   ([`docs/design/aggregates.md`](docs/design/aggregates.md) § 13).
 2. **Demand-driven evaluation.** Given a goal, derive only the tuples that can reach it (magic
    sets). Answers do not change, so every existing test and hash still holds.
 3. **`under/3`**, a prefix match that respects segment separators, when a consumer's names need
