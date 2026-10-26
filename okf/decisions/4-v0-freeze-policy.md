@@ -22,7 +22,7 @@ A frozen item does not change in any release. Consumers store these: Anam keeps 
 | `RuleSet` ID format (`name/version hash`) | `TestGolden_RuleSetID` |
 | A constant's canonical text | `TestGolden_ConstantText` |
 | Proof JSON (`Proof.MarshalJSON`) | `TestGolden_ProofAndAbsenceJSON` (proof_golden_test.go); `TestRender_JSON` also compares a literal |
-| Absence JSON (`Absence.MarshalJSON`) | `TestRender_JSON`, `TestWhyNot_AggregateJSONRoundTrip` |
+| Absence JSON (`Absence.MarshalJSON`) | `TestGolden_ProofAndAbsenceJSON`; also `TestRender_JSON`, `TestWhyNot_AggregateJSONRoundTrip` |
 
 Proof JSON and Absence JSON are frozen as formats: the keys, their meaning and their encoding. What a given proof records is a separate matter, below.
 

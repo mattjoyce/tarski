@@ -1,6 +1,6 @@
 ---
 id: 10
-status: doing
+status: done
 ---
 # Docs true-up after the v0.3.0 luminary panel
 
@@ -35,3 +35,4 @@ When a consumer engineer finds tarski cold, I want the README, godoc and DESIGN.
 
 ## Narrative
 - 2026-10-26: card drafted from the panel collation by datalog-module.
+- 2026-10-26: built by three Sonnet legs (Go and godoc; README and contract; records, okf and CI), verified and merged by datalog-module, released in v0.3.1 with card 11. T3 and T4 stay in docs/DECISIONS-PENDING.md for Matt before v1.0. (by datalog-module)

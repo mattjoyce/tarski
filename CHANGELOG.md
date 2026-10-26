@@ -4,7 +4,7 @@ What is frozen, what is stable within a minor version and what is not promised i
 README § What it promises consumers. Any change to a frozen row is breaking and is listed here
 under its version.
 
-## Unreleased — v0.3.1
+## v0.3.1 — 2026-10-26
 
 Documentation release (card 10), from the luminary panel on v0.3.0
 (`docs/reviews/luminary-docs-2026-10-26/`). No answer, hash, proof or golden byte changes. The
@@ -50,8 +50,10 @@ items below are the panel's ten convergences, in its order.
   with `edge`, `path` and `node` for examples. The consumer sketches left it, and the guidance
   they held, without consumer names, is `docs/howto/demand.md`. `NOTICE` now names the commit
   of each copied fixture and says `rbac_unseeded.dl` is derived, not copied.
-- **Pending (card 11): builtin refusals name the argument and show the signature.** Not yet
-  released.
+- **Builtin refusals name the argument and show the signature (card 11).** A variable a
+  builtin cannot bind: `Other, argument B of within(A, B, Days), must be bound by a positive
+  body atom`. The wrong arity: `within has 2 arguments, but within takes 3: within(A, B, Days)`.
+  A Check refusal carries the signature. Message text only; no answer, hash or golden changes.
 
 ## v0.3.0 — 2026-10-26
 
