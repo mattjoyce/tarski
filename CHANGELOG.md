@@ -4,7 +4,7 @@ What is frozen, what is stable within a minor version and what is not promised i
 README § What it promises consumers. Any change to a frozen row is breaking and is listed here
 under its version.
 
-## Unreleased
+## v0.3.2 — 2026-10-26
 
 Hardening from the RBAC pressure review (card 13, `reviews/luminary-rbac-2026-10-26/`). No
 answer, hash, proof, golden byte or step count changes for any input that was accepted and
