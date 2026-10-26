@@ -51,7 +51,7 @@ func TestCompile_RefusesUnsafeAggregates(t *testing.T) {
 		{"unbound variable in a negation inside", `n(N) :- N = count : { item(_, V), not tag(V, W) }.`, tarski.ErrInvalid,
 			"W in not tag is not bound"},
 		{"unbound variable in a builtin inside", `n(N) :- N = count : { word(V), prefix(W, V) }.`, tarski.ErrInvalid,
-			"W in prefix must be bound by a positive body atom"},
+			"W, argument Pattern of prefix(Pattern, Subject), must be bound by a positive body atom"},
 		{"a builtin binds nothing inside", `n(N) :- N = min V : { prefix("a", V) }.`, tarski.ErrInvalid,
 			"V in min must be bound by a positive atom inside the braces"},
 		{"wrong arity inside", `n(N) :- N = count : { item(_) }.`, tarski.ErrInvalid, "item has 1 arguments, but item is item/2"},
