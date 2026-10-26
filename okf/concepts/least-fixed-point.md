@@ -10,7 +10,7 @@ timestamp: 2026-10-26T00:00:00Z
 
 A relation is a set of tuples. A rule is set algebra: a join (intersection on shared columns), a projection (drop columns), a union (two rules with one head) and, under stratification, a difference (`not`). The rules together form an operator on sets of facts. It is monotone: more input facts never remove a derived fact, within a stratum.
 
-By the Knaster-Tarski theorem a monotone operator on a complete lattice has a least fixed point. That least fixed point is what a Datalog program means: the smallest set of facts closed under the rules and containing the base. The engine computes it, and the package is named for Alfred Tarski. See [decision 1](/decisions/1-the-name.md).
+By the Knaster-Tarski theorem a monotone operator on a complete lattice has a least fixed point. That least fixed point is what a Datalog program means: the smallest set of facts closed under the rules and containing the base. The engine computes it, and the package is named for Alfred Tarski. See [README](../../README.md).
 
 # How it is computed
 
@@ -33,4 +33,4 @@ Sets have no order, so facts can arrive in any order and the answer and its hash
 [1] [README.md](../../README.md)
 [2] [docs/design/aggregates.md, section 0 (invariants I1 to I7)](../../docs/design/aggregates.md)
 [3] [docs/design/demand.md, section 0 (D1 to D11)](../../docs/design/demand.md)
-[4] [doc.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/doc.go)
+[4] [doc.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/doc.go)

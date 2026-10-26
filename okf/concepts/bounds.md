@@ -24,15 +24,15 @@ Steps rose twice in the pressure review's wake, so the current rule is worth sta
 |---|---|
 | Every candidate visited by a join or a negation probe | v0.1.0 (carried from Shearline) |
 | Every aggregate inner candidate, plus one step for each group computed | v0.2.0 |
-| A sum's fold, priced by `sumWork` and charged before it runs | v0.2.0 (second security review, see [sum security reviews](/reviews/sum-security-reviews-2026-10-25.md)) |
+| A sum's fold, priced by `sumWork` and charged before it runs | v0.2.0 (second security review, see sum security reviews) |
 | Every rule application | v0.2.1 |
 | Every builtin call, engine or consumer's | v0.2.2 |
 
-Comparisons stay free. The effect of the last two: a rule with no positive atom, called a guard-only rule, used to run its guards with no join step charged, and a body of 1000 builtin calls ran all of them under `MaxSteps: 1`. Now `MaxSteps` bounds how often any `Holds` runs, whatever the rule bodies hold, which is what the README promises consumers of [consumer builtins](/concepts/consumer-builtins.md). Step counts rise by one per rule application and per builtin call; no answer changes. See [the pressure review](/reviews/pressure-review-2026-10-26.md).
+Comparisons stay free. The effect of the last two: a rule with no positive atom, called a guard-only rule, used to run its guards with no join step charged, and a body of 1000 builtin calls ran all of them under `MaxSteps: 1`. Now `MaxSteps` bounds how often any `Holds` runs, whatever the rule bodies hold, which is what the README promises consumers of [consumer builtins](/concepts/consumer-builtins.md). Step counts rise by one per rule application and per builtin call; no answer changes. See the pressure review.
 
 # Aggregates and memory
 
-An aggregate's memo, and with `Proofs` its kept witnesses, grow with the groups computed. A group that derives no tuple is charged no bytes. So `MaxSteps`, not `MaxBytes`, is what bounds an aggregate's memory, and a consumer whose rules use aggregates should set it. The luminary audit added this to the docs ([luminary audit](/reviews/luminary-audit-2026-10-26.md)).
+An aggregate's memo, and with `Proofs` its kept witnesses, grow with the groups computed. A group that derives no tuple is charged no bytes. So `MaxSteps`, not `MaxBytes`, is what bounds an aggregate's memory, and a consumer whose rules use aggregates should set it. The luminary audit added this to the docs (luminary audit).
 
 # The third bound: numbers
 
@@ -52,13 +52,13 @@ The why-not walk is bounded by `whyNotSteps` = 1 << 16 candidates and `whyNotDep
 
 # Related
 
-[Package tarski](/packages/tarski.md), API: [Evaluate and Options](/api/evaluate-options.md).
+[Package tarski](/packages/tarski.md), API: [Evaluate and Options in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
 [1] [docs/DESIGN.md, Options and Evaluation invariants](../../docs/DESIGN.md)
 [2] [CHANGELOG.md, v0.2.0 to v0.2.2](../../CHANGELOG.md)
 [3] [README.md, What it promises consumers](../../README.md)
-[4] [bounds.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/bounds.go)
-[5] [sum.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/sum.go)
-[6] [join.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/join.go)
+[4] [bounds.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/bounds.go)
+[5] [sum.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/sum.go)
+[6] [join.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/join.go)

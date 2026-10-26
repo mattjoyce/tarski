@@ -8,6 +8,11 @@ import (
 
 // Result is what an evaluation derived: every relation, base and derived, at the
 // fixpoint.
+//
+// A Result evaluated for a goal (Options.Goal, on a plan from Plan.Demand) answers a
+// narrower contract: among the derived relations only the goal's relation is complete,
+// and Relation, Proof, WhyNot and WhyEmpty refuse or decline the rest. Check Goal before
+// passing such a Result to code that reads arbitrary relations.
 type Result struct {
 	relations map[string]*relation
 	proofs    map[string]map[string]*derivation // nil unless Options.Proofs
@@ -18,12 +23,18 @@ type Result struct {
 	bytes     int                               // derived bytes charged to MaxBytes (see Cost)
 }
 
-// Cost is the work the evaluation charged: steps (the count MaxSteps bounds: tuples visited
-// in joins, rule applications and builtin calls) and derived bytes (the count MaxBytes
-// bounds), on any Result, with or without a goal. A
-// demand evaluation's cost includes its helper tuples. It is an instrument for comparing
-// plans and watching cost follow the question, not a frozen value: it may change between
-// versions as the engine improves, and it is no part of an Answer or its hash.
+// Cost is the work the evaluation charged: steps, the count Options.MaxSteps bounds
+// (Options.MaxSteps lists what a step is), and derived bytes, the count Options.MaxBytes
+// bounds. It is available on any Result, with or without a goal. A demand evaluation's
+// cost includes its helper tuples.
+//
+// Cost is the calibration for the bounds: evaluate a representative input, read Cost,
+// and set the bounds with headroom above it. Within one version of the engine the count
+// is exact and deterministic for one (plan, base, options), and a bound equal to the
+// cost passes where one below it is refused. Across releases it is not stable, patch
+// releases included, because the engine's accounting changes as it improves, so
+// re-measure after an upgrade. Cost does not depend on Options.Proofs. It is no part of
+// an Answer or its hash.
 func (r Result) Cost() (steps, bytes int) { return r.steps, r.bytes }
 
 // Options bounds and shapes one evaluation.
@@ -32,9 +43,28 @@ type Options struct {
 	// (lengths unescaped), intermediate relations included, since derived relations can
 	// be larger than the input. Zero is no bound; over it, Evaluate returns *TooLarge.
 	MaxBytes int
-	// MaxSteps bounds the work: join steps (tuples visited) over the whole evaluation.
-	// MaxBytes cannot see a rule that visits a great deal and derives little, such as a
-	// cross product of duplicates. Zero is no bound; over it, Evaluate returns *TooLarge.
+	// MaxSteps bounds the work over the whole evaluation. MaxBytes cannot see a rule
+	// that visits a great deal and derives little, such as a cross product of
+	// duplicates. Zero is no bound; over it, Evaluate returns *TooLarge.
+	//
+	// A step is one of:
+	//   - a candidate tuple visited by a positive join, including the candidates inside
+	//     an aggregate's braces and the hidden helper relations of a demand plan;
+	//   - a candidate tuple tried by a negation probe;
+	//   - one application of a rule, counted again for each semi-naive re-application
+	//     in a later round, and so also for a rule with no positive atom;
+	//   - one call of a builtin (a comparison is free);
+	//   - one aggregate group computed, once per group however many rules read it;
+	//   - the priced work of a sum's fold, charged before the fold runs: its digits
+	//     parsed, added and aligned, in steps that grow with the width of the numbers.
+	//
+	// This list is the one definition of a step: Result.Cost, TooLarge.Steps, ErrTooLarge
+	// and Builtin all refer to it. Within one version the count is exact and
+	// deterministic for one (plan, base, options), and Result.Cost is the calibration:
+	// read it on a representative input and set the bound with headroom. Across releases
+	// it is not stable, patch releases included, so re-measure after an upgrade; a bound
+	// set tight to the old count can refuse after it. TooLarge.Steps and TooLarge.Bytes
+	// are on the same scale as Cost.
 	MaxSteps int
 	// Proofs records, for each derived tuple, the first derivation that produced it.
 	// It touches the hot loop, so it is off unless asked for.
@@ -50,8 +80,12 @@ type Options struct {
 // within each: after the first round only the tuples new in the last round are
 // joined again. It reads values and writes nothing, and the base is never changed, so
 // calls may share one. The deadline on ctx, opts.MaxBytes and opts.MaxSteps bound it.
-// A base built under a schema other than the plan's is ErrInvalid. A context already done fails
-// at once, before any join, so the deadline is honoured however small the evaluation.
+// A base is accepted when it is compatible with the plan by relation name and arity:
+// it must hold every base relation the plan reads, at the plan's arity, and none the plan
+// derives; otherwise ErrInvalid. Relations the plan never reads are ignored. Evaluate
+// does not run Schema.Checks again, so facts are held to a schema's checks where
+// NewBase and Base.With admit them, not here. A context already done fails at once,
+// before any join, so the deadline is honoured however small the evaluation.
 // A consumer builtin that panics fails the evaluation with ErrInvalid, never a partial
 // result; the panic does not escape.
 func Evaluate(ctx context.Context, plan Plan, base Base, opts Options) (Result, error) {

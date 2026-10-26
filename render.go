@@ -316,6 +316,8 @@ func (p Proof) json(shown map[string]bool) jsonProof {
 // document is not written out again: it is {relation, tuple, rule: null, shown: true},
 // and its proof is the first one in the document with that relation and tuple, so the
 // document is linear in the derivation however much of it is shared.
+//
+// These bytes are frozen: a change to them is a breaking change, pinned by a test.
 func (p Proof) MarshalJSON() ([]byte, error) { return json.Marshal(p.json(map[string]bool{})) }
 
 type jsonFailure struct {
@@ -369,4 +371,8 @@ func (a Absence) json(depth int) jsonAbsence {
 // null, a failed literal is its source text, and because, blocked, value and reason
 // appear only when there is one (value and reason only for an aggregate literal).
 // A blocked proof is written as Proof.MarshalJSON writes one.
+//
+// These bytes are frozen, like the proof's: a change to them is a breaking change,
+// pinned by a test. Which bindings and blocking witness an absence reports is
+// deterministic for one plan, one sequence of facts and one set of options.
 func (a Absence) MarshalJSON() ([]byte, error) { return json.Marshal(a.json(0)) }

@@ -9,7 +9,9 @@ from Anam's query engine (https://github.com/mattjoyce/anam). Its exact decimal
 numbers and builtin table were ported from Anam (origin/master 45e4a67). Both
 projects are by the same author and licensed under the Apache License, Version 2.0.
 
-testdata/anam.dl is copied unchanged from Anam's internal/query/rules/anam.dl,
-and the rule sets under testdata/ named for Shearline are copied from
-Shearline's policy/rbac.dl, both under the Apache License, Version 2.0. They are
-test fixtures, not part of the module's API.
+testdata/anam.dl is copied unchanged from Anam's internal/query/rules/anam.dl
+at 45e4a67. testdata/rbac.dl is copied unchanged from Shearline's
+policy/rbac.dl at c4f75ab. testdata/rbac_unseeded.dl is derived from rbac.dl
+(the request seeds removed) for the demand benchmarks. All three are under the
+Apache License, Version 2.0. They are test fixtures, not part of the module's
+API.

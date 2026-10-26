@@ -183,7 +183,7 @@ func TestEvaluate_MaxSteps(t *testing.T) {
 	if big.MaxSteps != 1000 || big.Steps != 1001 || big.Relation != "dup" || big.Bound != "MaxSteps" || !strings.HasPrefix(err.Error(), "tarski: ") {
 		t.Errorf("TooLarge = %+v, want 1001 steps over 1000 at dup", *big)
 	}
-	for _, want := range []string{"1001 join steps", "Options.MaxSteps", "more selective"} {
+	for _, want := range []string{"1001 steps", "Options.MaxSteps", "more selective"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}

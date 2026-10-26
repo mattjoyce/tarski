@@ -1,7 +1,12 @@
 # Aggregates: count, sum, min, max over a grouped body
 
-Design for card 6 (`kanban/doing/6-aggregates.md`), targeting v0.2.0. Written 2026-10-25 by
-datalog-module for Matt's review. Binding inputs: `AGENTS.md`, `README.md` § The admission rule,
+> **Status:** decided 2026-10-26, released in v0.2.0. This is the design record, frozen as
+> written; line citations into the code are as of the commit named below (`577d2c1`, the v0.1.0
+> tag) and are not maintained. The contract is `docs/DESIGN.md`; the API is `go doc`. Corrections
+> to this record are in the Errata section at the end.
+
+Design for card 6 (`kanban/done/6-aggregates.md`). Written 2026-10-25 by datalog-module for
+Matt's review. Binding inputs: `AGENTS.md`, `README.md` § The admission rule,
 `docs/DESIGN.md`, Shearline's `docs/ENGINE.md` § Direction of travel 2, Anam's `docs/QUERY.md`
 and `scripts/souffle-diff.py` (both read from anam `origin/master`). Anam card 213 is not on this
 machine and was not read. Line numbers cite the tree at v0.1.0.
@@ -95,7 +100,7 @@ Kinds are data, so they cannot be refused at Compile. The rule follows the engin
 treatment of kinds: comparisons across kinds are false (`eval.go:343-364`) and a wrong-kind
 builtin argument is false (`builtins.go:65-83`). A `sum` over a group holding a non-number, or a
 `min`/`max` over a group holding two kinds, **derives no tuple for that group**, and why-not
-reports the offending constant (§5.4). Nothing is ignored silently and nothing is coerced. The
+reports the offending constant (§5.4). Nothing is coerced, and the group is omitted rather than answered (see Errata). The
 alternative, failing the whole evaluation with `ErrInvalid`, punishes a ledger query for one
 stray string; the alternative of skipping non-numbers answers a wrong total with confidence.
 Open question Q2.
@@ -296,7 +301,7 @@ type Proof struct {
 `Body` keeps the outer positive atoms as today. `derivation` (`eval.go:192-200`) gains the
 same two, filled by `record` from the aggregate's memo entry when a head tuple is first
 derived. With several aggregates in a rule the witnesses are concatenated in literal order and
-`GroupSize` sums them; a receipt that needs them apart can read the rule text. `builder.build`
+`GroupSize` sums them; the witnesses of several aggregates are not separable in the receipt (see Errata). `builder.build`
 (`proof.go:45-62`) builds each witness tuple's proof through the same memo, so shared facts stay
 one value (I7 holds: witnesses are lower-stratum tuples).
 
@@ -519,4 +524,25 @@ All ten questions in §11 were settled on the recommendation:
     Result.
 
 v0.2.0 is tagged once Shearline refuses aggregates in `policy.Load` and Anam's oracle script
-skips the deltas (CHANGELOG § Unreleased).
+skips the deltas (CHANGELOG § v0.2.0).
+
+## Errata (2026-10-26)
+
+Corrections found by the documentation panel. Two sentences were flatly false and are fixed in
+place above; this section records what they said and why they were wrong.
+
+1. **§1.4, "Nothing is ignored silently".** Too strong. A `sum` over a group holding a
+   non-number, or a `min` or `max` over a group holding two kinds, derives no tuple, so the whole
+   group is absent from the Answer. Nothing in the Answer says a group was dropped. The signal is
+   `WhyNot` (for a tuple the reader expected) or `WhyEmpty` (for a relation with no tuple), and
+   both need `Options.Proofs`. Verified in `aggregate_eval.go` (`aggValue.ok` false when `mixed`
+   is set). The decision stands; only the claim of silence was wrong.
+2. **§5.1, "a receipt that needs them apart can read the rule text".** False. The 64-witness cap
+   (`maxProofGroup`) is shared across all of a rule's aggregates: `groupOf` concatenates their
+   kept witnesses in written order, cuts the list at 64, and `GroupSize` is the sum of the
+   groups' sizes. A receipt cannot split them by reading the rule, because the cut can fall
+   inside any one aggregate's witnesses. Verified in `aggregate_eval.go`.
+3. **Closing paragraph, "CHANGELOG § Unreleased".** The entry is now CHANGELOG § v0.2.0.
+4. **Status and card path.** The opening lines said "targeting v0.2.0 ... for Matt's review"
+   and cited `kanban/doing/`. The record is decided and released, and card 6 is in
+   `kanban/done/`.

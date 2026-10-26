@@ -76,12 +76,12 @@ The last row (design 12.1), over `t(1). t(2).` and `s(1,10). s(1,20). s(2,10). s
 | `sum X : { t(X), s(X, _) }` | 3 | 4 |
 | `count : { t(X), s(X, Y) }` | 3 | 3 |
 
-Soufflé counts every tuple for a single-atom body but projects `_` away for a multi-literal one. tarski keeps one rule for both. Named-variable witnesses everywhere would make Anam's "how many readings in June" count distinct instants rather than readings. To get Soufflé's projection in tarski, name it as a rule: `w(X) :- t(X), s(X, _).` then `count : { w(X) }`. Matt settled this on tarski's reading ([decision 5](/decisions/5-aggregate-semantics.md)).
+Soufflé counts every tuple for a single-atom body but projects `_` away for a multi-literal one. tarski keeps one rule for both. Named-variable witnesses everywhere would make Anam's "how many readings in June" count distinct instants rather than readings. To get Soufflé's projection in tarski, name it as a rule: `w(X) :- t(X), s(X, _).` then `count : { w(X) }`. Matt settled this on tarski's reading ([aggregates design record](../../docs/design/aggregates.md)).
 
 # Consumers
 
 - **Shearline** never uses aggregates: a decision is a tuple, not a count. `policy.Load` refuses a plan with `HasAggregates()`, and any code walking rule bodies must know a `Literal` may now be an `Aggregate`.
-- **Anam** needs them first; its counting question is a test (`TestAnamRuleSet_CountsJuneReadings`). See [Anam query](/examples/anam-query.md).
+- **Anam** needs them first; its counting question is a test (`TestAnamRuleSet_CountsJuneReadings`). See [Anam query](../../anam_test.go).
 
 # Forward compatibility with demand
 
@@ -89,7 +89,7 @@ The inner body is a closed unit whose free variables are exactly the group varia
 
 # Related
 
-API: [Aggregate and HasAggregates](/api/aggregate.md), [decision 5](/decisions/5-aggregate-semantics.md).
+API: [Aggregate and HasAggregates in docs/DESIGN.md](../../docs/DESIGN.md), [aggregates design record](../../docs/design/aggregates.md).
 
 # Citations
 
@@ -97,6 +97,6 @@ API: [Aggregate and HasAggregates](/api/aggregate.md), [decision 5](/decisions/5
 [2] [docs/design/aggregates.md, section 12 and 12.1](../../docs/design/aggregates.md)
 [3] [docs/design/aggregates.md, section 13](../../docs/design/aggregates.md)
 [4] [docs/DESIGN.md, Aggregates](../../docs/DESIGN.md)
-[5] [Card 6, aggregates](../../kanban/doing/6-aggregates.md)
-[6] [aggregate_eval.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/aggregate_eval.go)
-[7] [anam_test.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/anam_test.go)
+[5] [Card 6, aggregates](../../kanban/done/6-aggregates.md)
+[6] [aggregate_eval.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/aggregate_eval.go)
+[7] [anam_test.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/anam_test.go)

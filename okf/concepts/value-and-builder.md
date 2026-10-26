@@ -29,11 +29,11 @@ Anam's lazy index mutated shared base relations, which would race under a concur
 
 # Related
 
-[Bounds](/concepts/bounds.md), API: [NewBase and With](/api/base.md).
+[Bounds](/concepts/bounds.md), API: [NewBase and With in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
 [1] [docs/DESIGN.md, Concurrency invariant](../../docs/DESIGN.md)
-[2] [relation.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/relation.go)
-[3] [builder.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/builder.go)
-[4] [base.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/base.go)
+[2] [relation.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/relation.go)
+[3] [builder.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/builder.go)
+[4] [base.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/base.go)

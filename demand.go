@@ -47,6 +47,13 @@ type demandPlan struct {
 // what the receiver would for the goal's relation, filtered to the goal's constants,
 // and derives only what can reach the goal; it is a value, shareable as any plan is.
 //
+// What demand saves comes from the positions the adornment binds: a goal with every
+// position open, the adornment of all f's, can cost more than full evaluation, because
+// the helper tuples the rewrite adds are charged like any others. Measure with
+// Result.Cost on a representative goal rather than assume. Under the same bounds a
+// demand plan can therefore be refused with *TooLarge where the full plan answers, so
+// set the bounds for the plan that will run.
+//
 // Where the rewrite would break stratification, or would copy one relation's rules for
 // more than 64 binding patterns, demand is dropped for that relation, which is then
 // derived whole; the answer is the same either way, only the work differs.

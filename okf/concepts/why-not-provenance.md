@@ -51,12 +51,12 @@ Why-not is given only for the goal's relation and tuples that agree with the goa
 
 # Related
 
-[Proof](/concepts/proof.md), [value and builder](/concepts/value-and-builder.md) (why the walk can scan sealed relations safely), API: [WhyNot and WhyEmpty](/api/whynot-whyempty.md).
+[Proof](/concepts/proof.md), [value and builder](/concepts/value-and-builder.md) (why the walk can scan sealed relations safely), API: [WhyNot and WhyEmpty in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
 [1] [docs/DESIGN.md, Absence, WhyNot, WhyEmpty](../../docs/DESIGN.md)
 [2] [Card 8, why is this answer empty](../../kanban/done/8-why-empty.md)
-[3] [whynot.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/whynot.go)
-[4] [whynot_aggregate.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/whynot_aggregate.go)
-[5] [whyempty_test.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/whyempty_test.go)
+[3] [whynot.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/whynot.go)
+[4] [whynot_aggregate.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/whynot_aggregate.go)
+[5] [whyempty_test.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/whyempty_test.go)

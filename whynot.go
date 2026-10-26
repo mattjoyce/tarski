@@ -81,7 +81,8 @@ type RuleFailure struct {
 // means the engine's default. On a Result evaluated for a goal, ok is also false unless
 // name is the goal's relation and t agrees with the goal's constants: only there are the
 // relations the walk reads complete. The failing literal per rule is full evaluation's;
-// the bindings and blocking witness may differ where several exist (design D11).
+// the bindings and blocking witness may differ where several exist, as which proof is
+// recorded may (see Result.Proof).
 func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) {
 	rel, found := r.relations[name]
 	arity, known := r.plan.Arity(name)
@@ -97,7 +98,7 @@ func (r Result) WhyNot(name string, t Tuple, maxDepth int) (a Absence, ok bool) 
 
 // WhyEmpty explains why a relation holds no tuple at all: the answer to a question that
 // came back empty, which is the worst answer to leave unexplained, since it reads the
-// same as "there is nothing" (Anam card 182). The goal is every position open, so each
+// same as "there is nothing". The goal is every position open, so each
 // rule reports the farthest literal any binding reached. ok is false when the relation
 // holds a tuple (ask Proof of one), when it is not a relation of the plan, when the
 // evaluation ran without Options.Proofs, or when a consumer builtin panicked during the

@@ -102,3 +102,50 @@ func TestResult_DemandCostsLessThanFull(t *testing.T) {
 		t.Errorf("demand cost = %d steps, %d bytes; full = %d, %d; want demand lower on both", ds, db, fs, fb)
 	}
 }
+
+// Cost does not depend on Options.Proofs: recording derivations adds no step and no
+// byte, so a bound tuned with proofs off still holds with them on. It holds on a plan
+// with and without aggregates, and on a demand plan.
+func TestResult_CostIgnoresProofs(t *testing.T) {
+	t.Parallel()
+	reachPlan, err := tarski.Compile(testSchema, parse(t, reachRules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reachDemand, err := reachPlan.Demand("reaches", "bf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggPlan, err := tarski.Compile(testSchema, parse(t, `
+out(X, N, S) :- node(X), N = count : { edge(X, _) }, S = sum V : { score(X, V) }.
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := append(chain(30), fact("node", "n1"), fact("node", "n2"),
+		fact("score", "n1", 3), fact("score", "n1", 4), fact("score", "n2", 5))
+	cases := []struct {
+		name string
+		plan tarski.Plan
+		opts tarski.Options
+	}{
+		{"no aggregate", reachPlan, tarski.Options{}},
+		{"aggregates", aggPlan, tarski.Options{}},
+		{"demand", reachDemand, tarski.Options{Goal: strGoal("reaches", "n3", "?Y")}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			base := newBase(t, facts...)
+			offSteps, offBytes := costOf(t, tc.plan, base, tc.opts)
+			on := tc.opts
+			on.Proofs = true
+			onSteps, onBytes := costOf(t, tc.plan, base, on)
+			if offSteps <= 0 || offBytes <= 0 {
+				t.Fatalf("Cost with proofs off = %d, %d, want both positive", offSteps, offBytes)
+			}
+			if onSteps != offSteps || onBytes != offBytes {
+				t.Errorf("Cost with proofs on = %d, %d, off = %d, %d, want equal", onSteps, onBytes, offSteps, offBytes)
+			}
+		})
+	}
+}

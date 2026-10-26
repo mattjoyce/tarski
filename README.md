@@ -29,11 +29,16 @@ times. Its consumers are Shearline's policy layer, Anam's query, and Ductile's c
 Go 1.25 or later, standard library only.
 
 ```
-go get github.com/mattjoyce/tarski
-go doc github.com/mattjoyce/tarski
+go get github.com/mattjoyce/tarski@v0.3.0
+go doc -all github.com/mattjoyce/tarski
 ```
 
-The API contract and the evaluation invariants are in [`docs/DESIGN.md`](docs/DESIGN.md).
+Start from the runnable examples: `ExampleEvaluate`, `ExampleResult_WhyNot` and
+`ExamplePlan_Demand` are on pkg.go.dev, and `go test -run Example` runs them. They are compiled
+and checked in CI, so they cannot drift from the code. The API contract and the evaluation
+invariants are in [`docs/DESIGN.md`](docs/DESIGN.md); choosing a goal shape for demand-driven
+evaluation is in [`docs/howto/demand.md`](docs/howto/demand.md); the ideas behind the engine
+are explained in [`okf/concepts/`](okf/concepts/index.md).
 
 ## The admission rule
 
@@ -51,23 +56,58 @@ all four.
 
 ## What it promises consumers
 
-These hold from the first tag. Breaking any of them takes a minor version bump and a changelog
-entry, and three consumers have to agree.
+These hold from the first tag. Breaking a frozen row takes a minor version bump and a changelog
+entry, and the consumers that import tarski have to agree.
 
-- **Answer bytes are frozen.** An `Answer` serialises one way. Its hash is sha256 over those
-  bytes, and a `RuleSet` hash is sha256 over its text. Receipts stored by consumers depend on
-  both.
+| What | Status | Pinned by |
+|---|---|---|
+| Answer bytes (an `Answer` serialises one way) | frozen | `TestGolden_AnswerBytesAndHash`, `TestGolden_AggregateAnswers` |
+| Answer hash (sha256 over those bytes) | frozen | `TestGolden_AnswerBytesAndHash` |
+| `RuleSet` hash (sha256 over its text) | frozen | `TestRuleSet_HashIsStillTheTextHash`, `TestGolden_RuleSetID` |
+| `RuleSet` ID format (`name/version hash`) | frozen | `TestGolden_RuleSetID` |
+| Constant canonical text | frozen | `TestGolden_ConstantText` |
+| Proof JSON bytes | frozen | `TestGolden_ProofAndAbsenceJSON` |
+| Absence JSON bytes | frozen | `TestGolden_ProofAndAbsenceJSON` |
+| Rendered text (`Proof.String`, `Absence.String`) | stable within a minor version | `TestRender_Strings`, `ExampleResult_WhyNot` |
+| Which derivation a proof records | not promised across plans: deterministic for one (plan, base sequence, options), and a demand plan may record a different one than the full plan | `TestProof_Deterministic` |
+| Step and byte counts (`Result.Cost`, `TooLarge`) | not promised across releases, patch releases included; exact and deterministic within a version | `TestResult_CostIsWhatTheBoundsCharge` |
+
+The rest of the contract:
+
 - **Same inputs, same outputs.** One (plan, base, options) gives the same answers, hashes,
-  proofs and why-nots on every run.
+  proofs and why-nots on every run. A base is a fact sequence, not a set. Answers and hashes
+  depend only on the set of facts. Proofs, witness order and why-not bindings also depend on
+  the order the facts were given, because the first derivation found is the one recorded. A
+  consumer that pins proofs sorts its facts before building the base.
 - **Values, not places.** `Plan`, `Base` and `Result` are immutable once built and safe to share
   across goroutines, so any number of `Evaluate` calls may run on one plan and one base.
+- **Terminating.** Evaluation always ends. Rules have no function symbols and no builtin makes
+  a value, so a derived tuple is built from constants of the base and the program. An aggregate
+  adds values, but it is stratified like negation, so each stratum sees finitely many group
+  keys and one value per key ([`docs/design/aggregates.md`](docs/design/aggregates.md) I2).
 - **Fail closed and bounded.** The context is checked on entry and during evaluation. Crossing
   `MaxBytes` or `MaxSteps`, or summing past the exact-number bounds, returns `*TooLarge`, never a
   partial answer. With aggregates, set `MaxSteps`: it bounds an aggregate's memory as well as its
-  work, since a group that derives nothing is charged no bytes. No consumer input can
-  make the engine panic, and the fuzz suites in CI hold that.
+  work, since a group that derives nothing is charged no bytes.
+- **No panic on consumer data.** Text given to `Parse`, facts given to `NewBase` or `With`, and
+  a hand-built `Program` given to `Compile` cannot make the engine panic, and a panicking
+  `Builtin.Holds` is recovered and returned as an error. Two consumer callbacks are not
+  recovered: `Schema.Checks` and `Builtin.Check` run the consumer's code, and a panic in either
+  reaches the caller. The fuzz suites cover generated text, facts and number lexemes
+  (`FuzzParseCompileEvaluate`, `FuzzNumberRoundTrip` and two graph oracles) and hand-built
+  `Program` values (`FuzzCompileHandBuiltProgram`).
 - **Receipts as data.** `Proof`, `Absence` and `RuleFailure` are exported structs. They render
   as indented text and marshal to compact JSON.
+
+### Setting the bounds
+
+`MaxSteps` and `MaxBytes` should come from a measurement. Evaluate a representative request
+with no bound, read `Result.Cost`, and set the bounds with headroom above what it reports.
+What a step is lives in one place, the `Options.MaxSteps` godoc. Step accounting grew in v0.2.1
+and v0.2.2, so a bound tuned tight can refuse after a patch upgrade: re-measure after any
+upgrade, and treat `*TooLarge` on a request that used to pass as a reason to re-measure before
+anything else. A bound equal to the measured cost passes and one below it is refused
+(`TestResult_CostIsWhatTheBoundsCharge`).
 
 ## Consumer builtins
 
@@ -92,10 +132,10 @@ Each step ships only when a consumer actually needs it.
    ([`docs/design/aggregates.md`](docs/design/aggregates.md) § 13).
 2. **Demand-driven evaluation.** Given a goal, derive only the tuples that can reach it (magic
    sets). Answers do not change, so every existing test and hash still holds. Released in
-   v0.3.0 ([`docs/design/demand.md`](docs/design/demand.md), evidence § 9): `Plan.Demand`,
-   `Options.Goal`, `Result.Goal`, `Result.Cost`. Cost follows the question where the goal binds
-   something; with every position open it can cost more than a hand-bounded full evaluation,
-   so a consumer measures with `Result.Cost` before switching.
+   v0.3.0 ([`docs/design/demand.md`](docs/design/demand.md), evidence § 9). Cost follows the
+   bound positions of the goal, so measure with `Result.Cost` before switching. How to
+   choose a goal shape, and the case where it costs more, is in
+   [`docs/howto/demand.md`](docs/howto/demand.md).
 3. **`under/3`**, a prefix match that respects segment separators, when a consumer's names need
    it.
 

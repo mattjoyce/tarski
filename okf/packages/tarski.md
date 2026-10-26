@@ -26,21 +26,14 @@ The engine is a function from a plan (compiled rules) and a base (a set of facts
 
 # What it promises consumers
 
-These hold from the first tag. Breaking any of them takes a minor version bump and a changelog entry, and three consumers have to agree. See [decision 4](/decisions/4-v0-freeze-policy.md).
-
-- **Answer bytes are frozen.** See [frozen bytes and answer hashes](/concepts/frozen-bytes-and-hashes.md).
-- **Same inputs, same outputs.** One (plan, base, options) gives the same answers, hashes, proofs and why-nots on every run.
-- **Values, not places.** `Plan`, `Base` and `Result` are immutable once built. See [value and builder](/concepts/value-and-builder.md).
-- **Fail closed and bounded.** A crossed bound is `*TooLarge`, never a partial answer. See [bounds](/concepts/bounds.md).
-- **Receipts as data.** `Proof`, `Absence` and `RuleFailure` are exported structs that render as indented text and marshal to compact JSON.
-- **Terminating.** No function symbols, and nothing a builtin or aggregate does makes a new value outside what the data holds. See [the admission rule](/concepts/admission-rule.md).
+The promises are stated once, in [README § What it promises consumers](../../README.md); this page does not restate them. What is frozen, and what is only stable, is set out in [the freeze policy](/decisions/4-v0-freeze-policy.md). Concepts behind them: [frozen bytes and answer hashes](/concepts/frozen-bytes-and-hashes.md), [value and builder](/concepts/value-and-builder.md), [bounds](/concepts/bounds.md), and, for why evaluation terminates, [the least fixed point](/concepts/least-fixed-point.md) and [the admission rule](/concepts/admission-rule.md).
 
 # Who consumes it
 
 | Consumer | Use |
 |---|---|
-| Shearline | The policy layer: one decision per request over a few hundred standing facts, with proofs and why-not as the receipt. Refuses rule sets that use aggregates. See [Shearline policy](/examples/shearline-policy.md). |
-| Anam | The query: one evaluation per question over a ledger. Its unmodified `rules/anam.dl` is a test here. Needs aggregates, and later RBAC via Shearline. See [Anam query](/examples/anam-query.md). |
+| Shearline | The policy layer: one decision per request over a few hundred standing facts, with proofs and why-not as the receipt. Refuses rule sets that use aggregates. See [Shearline policy](../../AGENTS.md). |
+| Anam | The query: one evaluation per question over a ledger. Its unmodified `rules/anam.dl` is a test here. Needs aggregates, and later RBAC via Shearline. See [Anam query](../../anam_test.go). |
 | Ductile | Config-time checks. Ductile's scopes were modelled as a Shearline policy, which runs on this engine. |
 
 # The diamond dependency
@@ -49,7 +42,7 @@ Anam and Ductile import Shearline as well as tarski, and Shearline imports tarsk
 
 - Every release must pass Shearline's policy suite, and Anam's `rules/anam.dl` test (`anam_test.go`) must stay green.
 - A consumer taking a new tarski moves the others with it. The v0.2.0 changelog says so: Anam adopting v0.2 moves Shearline too, which is why Shearline had to refuse aggregates in `policy.Load` before the tag.
-- The exported types (`Fact`, `RuleSet`, `Const`) are shared currency between consumers, so every change is a boundary change. See [decision 7](/decisions/7-mentors.md).
+- The exported types (`Fact`, `RuleSet`, `Const`) are shared currency between consumers, so every change is a boundary change. See [AGENTS.md mentors](../../AGENTS.md).
 
 # Lineage
 
@@ -57,7 +50,7 @@ Cut on 2026-10-25 from Shearline's `datalog` package (Shearline commit c4f75ab),
 
 # Files
 
-`parse.go`, `lex.go`, `shape.go` (language), `plan.go`, `stratify.go` (compile), `base.go`, `relation.go`, `builder.go` (data), `eval.go`, `join.go`, `bounds.go`, `builtins.go` (evaluation), `number.go`, `sum.go` (exact numbers), `aggregate*.go` (aggregates), `proof.go`, `whynot*.go`, `render.go` (provenance), `answer.go`, `bundled.go` (rule sets), `demand*.go` (demand, on master), `term.go` (constants).
+`parse.go`, `lex.go`, `shape.go` (language), `plan.go`, `stratify.go` (compile), `base.go`, `relation.go`, `builder.go` (data), `eval.go`, `join.go`, `bounds.go`, `builtins.go` (evaluation), `number.go`, `sum.go` (exact numbers), `aggregate*.go` (aggregates), `proof.go`, `whynot*.go`, `render.go` (provenance), `answer.go`, `bundled.go` (rule sets), `demand*.go` (demand), `term.go` (constants).
 
 # Related
 
@@ -70,4 +63,4 @@ Cut on 2026-10-25 from Shearline's `datalog` package (Shearline commit c4f75ab),
 [3] [NOTICE](../../NOTICE)
 [4] [docs/DESIGN.md](../../docs/DESIGN.md)
 [5] [CHANGELOG.md](../../CHANGELOG.md)
-[6] [doc.go at v0.2.2](https://github.com/mattjoyce/tarski/blob/v0.2.2/doc.go)
+[6] [doc.go at v0.3.0](https://github.com/mattjoyce/tarski/blob/v0.3.0/doc.go)

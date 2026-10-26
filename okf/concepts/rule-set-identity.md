@@ -32,10 +32,10 @@ timestamp: 2026-10-26T00:00:00Z
 
 # Related
 
-[Frozen bytes and answer hashes](/concepts/frozen-bytes-and-hashes.md), API: [RuleSet](/api/ruleset.md).
+[Frozen bytes and answer hashes](/concepts/frozen-bytes-and-hashes.md), API: [RuleSet in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
 [1] [docs/DESIGN.md, RuleSet, ID, Verify](../../docs/DESIGN.md)
 [2] [docs/design/aggregates.md, section 2.4](../../docs/design/aggregates.md)
-[3] [bundled.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/bundled.go)
+[3] [bundled.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/bundled.go)

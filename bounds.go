@@ -6,14 +6,15 @@ import (
 )
 
 // ErrTooLarge marks an evaluation refused for its size: it derived more than
-// Options.MaxBytes of text, took more than Options.MaxSteps join steps, or summed
-// to a number too wide to hold exactly. A more selective rule or a smaller base is
+// Options.MaxBytes of text, took more than Options.MaxSteps steps (Options.MaxSteps
+// says what a step is), or summed to a number too wide to hold exactly. A more selective rule or a smaller base is
 // the remedy; asking again unchanged will fail again.
 var ErrTooLarge = errors.New("tarski: derivation too large")
 
 // The values of TooLarge.Bound. BoundBytes and BoundSteps name the option that was
 // crossed. BoundNumber names no option: it is the engine's own bound on an exact
-// sum, which no setting moves (see maxSumDigits and maxExponent).
+// sum, which no setting moves: a sum is refused when its aligned width passes 65536
+// decimal places, or when its scientific exponent passes 999999999 either way.
 const (
 	BoundBytes  = "MaxBytes"
 	BoundSteps  = "MaxSteps"
@@ -22,7 +23,8 @@ const (
 
 // TooLarge is the refusal itself. Relation is the one being derived when a bound was
 // crossed. Tuples and Bytes count every derived relation's tuples and, approximately,
-// their JSON text; Steps counts join steps. Bound names what was crossed,
+// their JSON text; Steps counts steps as Options.MaxSteps defines them, on the scale of
+// Result.Cost. Bound names what was crossed,
 // BoundBytes, BoundSteps or BoundNumber, so a caller need not infer it from which
 // fields are set.
 type TooLarge struct {
@@ -51,7 +53,7 @@ type sumOverflow struct {
 func (e *TooLarge) Error() string {
 	switch e.Bound {
 	case BoundSteps:
-		return fmt.Sprintf("tarski: derivation too large: %d join steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
+		return fmt.Sprintf("tarski: derivation too large: %d steps, over the bound of %d (Options.MaxSteps), while deriving %s; "+
 			"make a rule more selective or the base smaller", e.Steps, e.MaxSteps, e.Relation)
 	case BoundNumber:
 		return e.numberError()

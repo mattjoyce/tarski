@@ -31,7 +31,9 @@ type Plan struct {
 
 // Schema names the base relations a base may hold and, per relation, an optional
 // compile-time check run on every atom (head or body) that names it. A check sees one
-// atom, so it can hold a constant to a shape; reachability is not its business.
+// atom, so it can hold a constant to a shape; reachability is not its business. A check
+// must not panic: the engine recovers a panic from a builtin's Holds during evaluation,
+// but not from a check, so a check's panic escapes Compile and NewBase.
 // Builtins declares the consumer's own guards beside the engine's (see Builtin).
 type Schema struct {
 	Arities  map[string]int
@@ -64,8 +66,10 @@ const noDemand = -1
 // Compile validates programs against a schema and groups their rules into strata.
 // The programs are read as one: a later program defines what an earlier one declared,
 // which is how a consumer's rules build on a bundled rule set. Programs are copied, and
-// a malformed one (see checkShape) is ErrInvalid. A relation declared and
-// defined nowhere is empty, not an error: that is how a rule set leaves a hook open.
+// a malformed one is ErrInvalid: a name the lexer would not read, an arity below one, a
+// literal that is not exactly one of an atom, a comparison and an aggregate, or an operator
+// the language lacks. A relation declared and defined nowhere is empty, not an error: that
+// is how a rule set leaves a hook open.
 // Schema maps are copied before any check runs; check functions still own their
 // closure state and must provide stable results for stable inputs. The builtin table
 // is copied too, so changing Schema.Builtins after Compile changes nothing the plan does.

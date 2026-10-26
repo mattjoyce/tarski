@@ -8,7 +8,7 @@ timestamp: 2026-10-26T00:00:00Z
 
 # Why
 
-The engine stays vocabulary-free, so a guard in a consumer's own words (Anam's `within/3` on fact-times, an `overlaps/4` on intervals) is declared by the consumer, not added to the engine. Card 2 settled the shape; see [decision 3](/decisions/3-consumer-builtins-in-schema.md).
+The engine stays vocabulary-free, so a guard in a consumer's own words (Anam's `within/3` on fact-times, an `overlaps/4` on intervals) is declared by the consumer, not added to the engine. Card 2 settled the shape; see [card 2](../../kanban/done/2-consumer-builtins.md).
 
 # Shape
 
@@ -54,7 +54,7 @@ The field shape (`Args` against `Arity`, `[]*Const` for `Check`) was to be confi
 
 # Related
 
-[Stratified negation](/concepts/stratified-negation.md), API: [Schema and Builtins](/api/schema-builtins.md).
+[Stratified negation](/concepts/stratified-negation.md), API: [Schema and Builtins in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
@@ -62,5 +62,5 @@ The field shape (`Args` against `Arity`, `[]*Const` for `Check`) was to be confi
 [2] [Card 5, tag v0.1.0](../../kanban/done/5-tag-v0.1.0.md)
 [3] [docs/DESIGN.md, Built-ins](../../docs/DESIGN.md)
 [4] [README.md, Consumer builtins](../../README.md)
-[5] [builtins.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/builtins.go)
-[6] [consumer_builtins_test.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/consumer_builtins_test.go)
+[5] [builtins.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/builtins.go)
+[6] [consumer_builtins_test.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/consumer_builtins_test.go)

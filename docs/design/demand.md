@@ -1,7 +1,12 @@
 # Demand-driven evaluation: derive only what can reach the goal
 
-Design for card 9 (`kanban/doing/9-demand-driven.md`), targeting v0.3.0 after v0.2.0 tags.
-Written 2026-10-26 by datalog-module for Matt's review. Binding inputs: `AGENTS.md`, `README.md`
+> **Status:** decided 2026-10-26, released in v0.3.0. This is the design record, frozen as
+> written; line citations into the code are as of the commit named below (`1053f06`, the
+> aggregates-through-demand slice) and are not maintained. The contract is `docs/DESIGN.md`; the
+> API is `go doc`. Notes on this record are in the Errata section at the end.
+
+Design for card 9 (`kanban/done/9-demand-driven.md`). Written 2026-10-26 by datalog-module for
+Matt's review. Binding inputs: `AGENTS.md`, `README.md`
 § The admission rule, `docs/DESIGN.md`, `docs/design/aggregates.md` § 8 and § 12.1, Shearline's
 `docs/ENGINE.md` § Direction of travel 3 and `policy/rbac.dl`, the Shearline module panel
 (`docs/reviews/luminary-module-2026-10-22/01-hickey-armstrong.md` A1), Anam's `rules/anam.dl` and
@@ -537,3 +542,14 @@ follow-ups should a consumer need them.
 all four `BenchmarkEvaluate` cases; times within noise (geomean +1.1%; `Evaluate/proofs=true`
 +4.8% at p=0.028 with a ±6% spread on the branch, for a change that copies two integers into
 the Result).
+
+## Errata (2026-10-26)
+
+1. **Open questions are answered.** §7 lists questions "for Matt" as written. Matt's answers are
+   in §8, and the evidence, including the Anam criterion that was not met and Matt's choice of
+   option (a), "ship as is", on 2026-10-26, is in §9. A reader should treat §7 as the questions
+   and §8 and §9 as their outcome.
+2. **Status and card path.** The opening lines said "targeting v0.3.0 after v0.2.0 tags" and
+   cited `kanban/doing/`. The record is decided and released, and card 9 is in `kanban/done/`.
+3. **Line citations.** They name master at the commit in the status header and have drifted
+   since. Find the current code by symbol name.

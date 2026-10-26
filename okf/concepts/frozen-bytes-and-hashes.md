@@ -40,5 +40,5 @@ Every walk over a map on the derivation path iterates in sorted order, since ins
 [1] [README.md, What it promises consumers](../../README.md)
 [2] [Card 4, golden tests](../../kanban/done/4-frozen-bytes-test.md)
 [3] [docs/design/aggregates.md, section 6](../../docs/design/aggregates.md)
-[4] [golden_test.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/golden_test.go)
-[5] [answer.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/answer.go)
+[4] [golden_test.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/golden_test.go)
+[5] [answer.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/answer.go)

@@ -1,8 +1,57 @@
 # Changelog
 
-Answer bytes, answer hashes, rule-set hashes and constants' canonical text are frozen
-(README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
-is listed here under its version.
+What is frozen, what is stable within a minor version and what is not promised is one table, in
+README § What it promises consumers. Any change to a frozen row is breaking and is listed here
+under its version.
+
+## Unreleased — v0.3.1
+
+Documentation release (card 10), from the luminary panel on v0.3.0
+(`docs/reviews/luminary-docs-2026-10-26/`). No answer, hash, proof or golden byte changes. The
+items below are the panel's ten convergences, in its order.
+
+- **C1, an example to start from.** `example_test.go` holds `ExampleEvaluate`,
+  `ExampleResult_WhyNot` and `ExamplePlan_Demand`. They run in CI and show on pkg.go.dev, and
+  `README.md` § Use points at them.
+- **C2, one definition of a step.** The `Options.MaxSteps` godoc lists what a step is, once.
+  `Result.Cost`, `TooLarge`, `ErrTooLarge`, `Builtin` and `docs/DESIGN.md` point to it, and the
+  stale "join steps" wording is gone from `eval.go`, `bounds.go` and `builtins.go`.
+- **C3, one table of what is frozen.** `README.md` § What it promises consumers now holds a
+  single table (frozen, stable within a minor, not promised) with the test that pins each row.
+  `CHANGELOG.md`, `AGENTS.md` and `docs/DESIGN.md` point to it. A new golden,
+  `TestGolden_ProofAndAbsenceJSON` in `proof_golden_test.go`, pins Proof and Absence JSON, which
+  no test had pinned byte for byte.
+- **C4, no dead links in the okf bundle.** `okf/index.md` no longer lists the `api/`,
+  `examples/` and `reviews/` directories, which are not in the repository, and the pages under
+  `okf/` no longer link into them. `okf/decisions/` now holds the freeze policy the contract cites.
+- **C5, a base is a fact sequence.** The determinism promise in `README.md` and `docs/DESIGN.md`
+  now says answers and hashes depend on the set of facts, while proofs, witness order and why-not
+  bindings also depend on fact order, so a consumer that pins proofs sorts its facts.
+- **C6, `docs/DESIGN.md` in the present tense.** The "carried from" preambles and the
+  "unchanged" markers are gone, and the API block shows the real fields of `Term`, `Atom`,
+  `Literal`, `Rule` and `Options`. The file names and unexported internals moved to the new
+  `docs/MAINTAINERS.md`. Five stale statements are corrected: where `join` and `walk` live, a
+  bundled rule set that does not exist, the aggregate `_` question that was decided, the unit of
+  a step, and the refusal of `Demand` on a plan already compiled for a goal. Lineage is one
+  History paragraph pointing at `NOTICE` and this file.
+- **C7, demand's caveat where the API is read.** `Plan.Demand` godoc and `docs/DESIGN.md` §
+  Demand-driven evaluation say that selectivity comes from the bound positions, that helper
+  tuples are charged, and that under the same bounds a demand plan can be refused where the full
+  plan answers.
+- **C8, how to choose a bound.** `README.md` § Setting the bounds and the `Result.Cost` godoc say
+  to measure a representative request, leave headroom, and measure again after an upgrade, since
+  step counts rose in v0.2.1 and v0.2.2. The step count is an instrument: exact and
+  deterministic within a version, not stable across releases.
+- **C9, a narrower panic promise.** "No consumer input can make the engine panic" now reads
+  "no consumer data": text, facts and hand-built programs. `Schema.Checks` and `Builtin.Check`
+  are named as the consumer callbacks that are not recovered. `FuzzCompileHandBuiltProgram` in
+  `fuzz_program_test.go` covers hand-built programs.
+- **C10, no consumer vocabulary in the contract.** `docs/DESIGN.md` speaks only of the engine,
+  with `edge`, `path` and `node` for examples. The consumer sketches left it, and the guidance
+  they held, without consumer names, is `docs/howto/demand.md`. `NOTICE` now names the commit
+  of each copied fixture and says `rbac_unseeded.dl` is derived, not copied.
+- **Pending (card 11): builtin refusals name the argument and show the signature.** Not yet
+  released.
 
 ## v0.3.0 — 2026-10-26
 

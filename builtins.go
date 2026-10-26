@@ -15,8 +15,8 @@ import (
 // The engine has three (see EngineBuiltins); a consumer declares its own in
 // Schema.Builtins. Holds must be a pure, total, deterministic function of its
 // arguments, safe to call from concurrent evaluations: the engine bounds how often it
-// is called (each call follows a charged join step), but not what one call costs, and
-// an impure Holds voids the promise that one (plan, base) has one answer and one hash.
+// is called (each call is a charged step, see Options.MaxSteps), but not what one call
+// costs, and an impure Holds voids the promise that one (plan, base) has one answer and one hash.
 type Builtin struct {
 	// Args names each argument, in order, for catalogues and error messages. The
 	// builtin's arity is len(Args), at least one.
@@ -26,7 +26,8 @@ type Builtin struct {
 	// Check, if not nil, refuses at Compile a constant argument the builtin could
 	// never accept. consts holds one entry per argument: the constant written there,
 	// or nil for a variable, which is judged only when it is bound. Its error is
-	// wrapped in ErrInvalid with the line.
+	// wrapped in ErrInvalid with the line. Check must not panic: unlike Holds, a panic
+	// here is not recovered.
 	Check func(consts []*Const) error `json:"-"`
 	// Holds is the guard over the bound arguments. A value of the wrong kind or shape
 	// is false, not an error: it came from data, and data is not the program's fault.

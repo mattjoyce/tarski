@@ -33,9 +33,13 @@ type Proof struct {
 
 // Proof is the proof of t in relation name; ok is false when t is not in the result or
 // the evaluation ran without Options.Proofs. On a Result evaluated for a goal, ok is also
-// false unless name is the goal's relation and t agrees with the goal's constants; a
-// proof there is a valid derivation, deterministic, but not promised to be the one full
-// evaluation records first, where a tuple has several (design D11).
+// false unless name is the goal's relation and t agrees with the goal's constants.
+//
+// Where a tuple has several derivations, which one the proof records is deterministic for
+// one plan, one sequence of facts and one set of options, and may differ between a full
+// plan and a demand plan; every proof is a valid derivation. The bytes of
+// Proof.MarshalJSON are frozen for a given proof; the text of Proof.String is stable but
+// not frozen.
 func (r Result) Proof(name string, t Tuple) (p Proof, ok bool) {
 	if r.proofs == nil || !r.covers(name, t) {
 		return Proof{}, false

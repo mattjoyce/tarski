@@ -30,11 +30,11 @@ A string builtin such as `prefix` passes all four. So do consumer builtins, on t
 
 # Helland and Stonebraker
 
-The check before anything is admitted is the third mentor pair's: does the engine still fit its workload, and does the feature belong in the engine at all or in a consumer? The aggregates design took four operations and refused `avg`: nothing that needs division, ordering of results or a scale rule enters the engine. Anam's lazy `attr/3` construction is base-side pruning and stays in Anam, since who builds the base is the consumer. See [decision 7](/decisions/7-mentors.md).
+The check before anything is admitted is the third mentor pair's: does the engine still fit its workload, and does the feature belong in the engine at all or in a consumer? The aggregates design took four operations and refused `avg`: nothing that needs division, ordering of results or a scale rule enters the engine. Anam's lazy `attr/3` construction is base-side pruning and stays in Anam, since who builds the base is the consumer. See [AGENTS.md mentors](../../AGENTS.md).
 
 # The roadmap it gates
 
-Each step ships only when a consumer needs it: aggregates (released v0.2.0), demand-driven evaluation (built on master), and `under/3`, a prefix match that respects segment separators, when a consumer's names need it. Not planned: arithmetic, regex, function symbols, mutable state, a file format, a network face, or any vocabulary of its own.
+Each step ships only when a consumer needs it: aggregates (released v0.2.0), demand-driven evaluation (released v0.3.0), and `under/3`, a prefix match that respects segment separators, when a consumer's names need it. Not planned: arithmetic, regex, function symbols, mutable state, a file format, a network face, or any vocabulary of its own.
 
 # Related
 

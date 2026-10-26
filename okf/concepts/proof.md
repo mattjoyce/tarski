@@ -43,11 +43,11 @@ A proof from a demand evaluation is a valid, deterministic derivation by a sourc
 
 # Related
 
-[Why-not provenance](/concepts/why-not-provenance.md), API: [Proof](/api/proof.md).
+[Why-not provenance](/concepts/why-not-provenance.md), API: [Proof in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
 [1] [docs/DESIGN.md, Proof](../../docs/DESIGN.md)
 [2] [docs/design/aggregates.md, section 5](../../docs/design/aggregates.md)
-[3] [proof.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/proof.go)
-[4] [render.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/render.go)
+[3] [proof.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/proof.go)
+[4] [render.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/render.go)

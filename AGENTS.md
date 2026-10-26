@@ -34,8 +34,9 @@ Use the luminaries *Before* pass on a design and the *After* pass on a diff.
 - **No vocabulary.** The engine never names a consumer's relations or concepts (role, entry,
   grant, facet, token, fact-time). Consumer words live in consumer rule sets and consumer
   builtins.
-- **Frozen bytes.** Answer serialisation, `Answer.Hash`, `RuleSet.Hash` and the canonical text of
-  a constant are frozen. A change to any of them is breaking. A test pins each one.
+- **Frozen bytes.** What is frozen, and the test that pins each row, is the table in
+  `README.md` § What it promises consumers. A change to a frozen row is breaking. Never update a
+  golden literal to make a test pass.
 - **Deterministic.** Every walk over a map on the derivation path iterates in sorted order.
 - **Fail closed.** Every bound crossed is an error and never a partial answer. Never panic on
   consumer input.

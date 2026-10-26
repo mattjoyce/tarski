@@ -27,8 +27,8 @@ timestamp: 2026-10-26T00:00:00Z
 # Tests that hold the contract
 
 - `golden_test.go` pins answer bytes, hashes, a rule-set ID and constants' canonical text; `aggregate_golden_test.go` pins the aggregate shapes.
-- `anam_test.go` compiles and evaluates Anam's unmodified `rules/anam.dl` ([Anam query](/examples/anam-query.md)).
-- `pressure_test.go` holds the regressions from the [pressure review](/reviews/pressure-review-2026-10-26.md).
+- `anam_test.go` compiles and evaluates Anam's unmodified `rules/anam.dl` ([Anam query](../../anam_test.go)).
+- `pressure_test.go` holds the regressions from the pressure review.
 - Property tests compare demand evaluation with full evaluation in bytes and hash ([demand-driven evaluation](/concepts/demand-driven-evaluation.md)).
 
 # The reusable-workflow workaround
@@ -37,7 +37,7 @@ The CI `quality` job does not call go-quality's reusable workflow. That workflow
 
 # Mentors
 
-Every design review and code audit runs through the luminaries skill. See [decision 7](/decisions/7-mentors.md).
+Every design review and code audit runs through the luminaries skill. See [AGENTS.md mentors](../../AGENTS.md).
 
 # Citations
 

@@ -60,12 +60,12 @@ A relation a program declares and nothing defines evaluates as the empty relatio
 
 # Related
 
-[Aggregates](/concepts/aggregates.md), [demand-driven evaluation](/concepts/demand-driven-evaluation.md) (which must preserve stratification or fall back), API: [Parse and Compile](/api/parse-compile.md).
+[Aggregates](/concepts/aggregates.md), [demand-driven evaluation](/concepts/demand-driven-evaluation.md) (which must preserve stratification or fall back), API: [Parse and Compile in docs/DESIGN.md](../../docs/DESIGN.md).
 
 # Citations
 
 [1] [docs/DESIGN.md, Built-ins and Evaluation invariants](../../docs/DESIGN.md)
 [2] [docs/design/aggregates.md, section 3](../../docs/design/aggregates.md)
 [3] [testdata/anam.dl](../../testdata/anam.dl)
-[4] [plan.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/plan.go)
-[5] [stratify.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/stratify.go)
+[4] [plan.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/plan.go)
+[5] [stratify.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/stratify.go)

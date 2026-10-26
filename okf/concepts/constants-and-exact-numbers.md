@@ -32,7 +32,7 @@ One value has one canonical text. It is the plain decimal: an integer in full, s
 
 # The breaking change against Shearline's engine
 
-Against the engine as Shearline v0.1.0 had it, a number at or above 1e6 or below 1e-4 in magnitude now prints in full (`1000000`, `0.00001`) where float64's shortest form wrote an exponent. That changes those answers' hashes. This was the one deliberate break, taken in the first tag; see [decision 2](/decisions/2-exact-numbers-in-the-first-tag.md). Nothing in Shearline's bundled rules or tests carries such a number.
+Against the engine as Shearline v0.1.0 had it, a number at or above 1e6 or below 1e-4 in magnitude now prints in full (`1000000`, `0.00001`) where float64's shortest form wrote an exponent. That changes those answers' hashes. This was the one deliberate break, taken in the first tag; see [card 1](../../kanban/done/1-exact-numbers.md). Nothing in Shearline's bundled rules or tests carries such a number.
 
 # Sums
 
@@ -48,12 +48,12 @@ JSON writes an invalid byte and U+FFFD as the same text, so two distinct constan
 
 # Related
 
-[Frozen bytes and answer hashes](/concepts/frozen-bytes-and-hashes.md), [decision 2](/decisions/2-exact-numbers-in-the-first-tag.md).
+[Frozen bytes and answer hashes](/concepts/frozen-bytes-and-hashes.md), [card 1](../../kanban/done/1-exact-numbers.md).
 
 # Citations
 
 [1] [Card 1, exact decimal numbers](../../kanban/done/1-exact-numbers.md)
 [2] [docs/DESIGN.md, constants](../../docs/DESIGN.md)
 [3] [CHANGELOG.md, v0.1.0](../../CHANGELOG.md)
-[4] [number.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/number.go)
-[5] [golden_test.go](https://github.com/mattjoyce/tarski/blob/v0.2.2/golden_test.go)
+[4] [number.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/number.go)
+[5] [golden_test.go](https://github.com/mattjoyce/tarski/blob/v0.3.0/golden_test.go)

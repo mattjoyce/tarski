@@ -8,7 +8,7 @@ timestamp: 2026-10-26T00:00:00Z
 
 # Status
 
-Released as v0.3.0 on 2026-10-26 (card 9, five slices): the internals, the rewrite, the fallback, aggregates, and the evidence. `Result.Cost() (steps, bytes int)` is in the exported API (design Q8). The design is `docs/design/demand.md`; Matt's decisions are its section 8 ([decision 6](/decisions/6-demand-decisions.md)) and the evidence its section 9: Shearline's criterion met (demand over unseeded rules within 1.03× of the hand-seeded steps, the MaxBytes cliff reproduced); Anam's partly met (wide `instant` under demand costs what the hand-bounded one does and 28× less than wide full, but about 8× the steps of hand-bounded full, since with no goal position bound the demand relations for `displaced` and `before` are as large as the relations). Matt chose to ship as is; a restricted passing strategy and supplementary magic sets stay as follow-ups.
+Released as v0.3.0 on 2026-10-26 (card 9, five slices): the internals, the rewrite, the fallback, aggregates, and the evidence. `Result.Cost() (steps, bytes int)` is in the exported API (design Q8). The design is `docs/design/demand.md`; Matt's decisions are its section 8 ([demand design record](../../docs/design/demand.md)) and the evidence its section 9: Shearline's criterion met (demand over unseeded rules within 1.03× of the hand-seeded steps, the MaxBytes cliff reproduced); Anam's partly met (wide `instant` under demand costs what the hand-bounded one does and 28× less than wide full, but about 8× the steps of hand-bounded full, since with no goal position bound the demand relations for `displaced` and `before` are as large as the relations). Matt chose to ship as is; a restricted passing strategy and supplementary magic sets stay as follow-ups.
 
 # What problem it solves
 
@@ -48,12 +48,12 @@ Demand enters an aggregate's braces only through its group variables, then what 
 
 # What a consumer sees
 
-- `Plan.Demand(relation, adornment)` compiles a plan for one shape; `Options.Goal` carries each request's constants; `Result.Goal()` reports the goal. See [Demand and Goal](/api/demand-goal.md).
+- `Plan.Demand(relation, adornment)` compiles a plan for one shape; `Options.Goal` carries each request's constants; `Result.Goal()` reports the goal. See [Demand and Goal in docs/DESIGN.md](../../docs/DESIGN.md).
 - `Relation(goal relation)` is the filtered answer. A base relation is the base's. Any other derived relation is `ErrInvalid` with a message saying how to read it (Q2): the result is partial for them and the type is not split.
 - Proofs and why-not only for the goal relation and tuples that agree with the goal's constants; `WhyEmpty` only when the goal leaves every position open.
 - A goal that repeats a variable other than `_` is refused (Q14): an adornment cannot express equality.
 
-# Evidence on master
+# Evidence at v0.3.0
 
 The property test compares demand with full evaluation on random recursive and negated programs, and fails when the demand rules are removed. After slices 3 and 4 every random program answers by demand (400 of 400, plus 300 with aggregates and 470 goal tuples), matching full evaluation in bytes, hash, proofs and why-not. `FuzzDemandMatchesFull` runs in CI. `TestDemand_CostFollowsTheGoal` shows the cost following the goal. The two consumer benchmarks (`BenchmarkShearline_Allow` over `testdata/rbac.dl` and its unseeded twin at 50,000 principals; `BenchmarkAnam_Regimen` over `testdata/anam.dl` at 900 and 6,000 entries, the design's 20,000 being infeasible for full evaluation) and the cliff test landed in slice 5; their numbers are design section 9.
 
@@ -63,14 +63,14 @@ Shearline keeps its seeds (Q10) and is told that proofs and why-not witnesses un
 
 # Related
 
-[Bounds](/concepts/bounds.md), [stratified negation](/concepts/stratified-negation.md), [decision 6](/decisions/6-demand-decisions.md), [package tarski](/packages/tarski.md).
+[Bounds](/concepts/bounds.md), [stratified negation](/concepts/stratified-negation.md), [demand design record](../../docs/design/demand.md), [package tarski](/packages/tarski.md).
 
 # Citations
 
 [1] [docs/design/demand.md](../../docs/design/demand.md)
 [2] [docs/design/demand.md, section 8, decided with Matt](../../docs/design/demand.md)
-[3] [Card 9, demand-driven evaluation](../../kanban/doing/9-demand-driven.md)
+[3] [Card 9, demand-driven evaluation](../../kanban/done/9-demand-driven.md)
 [4] [docs/DESIGN.md, Demand-driven evaluation](../../docs/DESIGN.md)
-[5] [demand.go on master](../../demand.go)
-[6] [demand_rewrite.go on master](../../demand_rewrite.go)
-[7] [demand_fallback.go on master](../../demand_fallback.go)
+[5] [demand.go](../../demand.go)
+[6] [demand_rewrite.go](../../demand_rewrite.go)
+[7] [demand_fallback.go](../../demand_fallback.go)
