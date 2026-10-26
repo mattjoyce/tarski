@@ -16,8 +16,9 @@ where noted.
 All ten questions settled on the recommendation ([design § 13](design/aggregates.md)). What remains
 is the consumer steps in [CHANGELOG § Unreleased](../CHANGELOG.md), and the tag.
 
-## v0.3.0 (demand-driven evaluation): designed, not built
+## v0.3.0 (demand-driven evaluation): decided 2026-10-26, building
 
-The fourteen questions in [`docs/design/demand.md`](design/demand.md) § Open questions. The
+All fourteen questions settled on the recommendation ([design § 8](design/demand.md)); the build
+follows its five slices. The
 design names one line not to cross: demand restricts what is derived. It never reorders a body
 or adds a cost model, because a query optimiser invites the next three asks.

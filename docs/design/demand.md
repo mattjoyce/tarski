@@ -433,3 +433,28 @@ Each slice leaves `~/Projects/go-quality/check.sh .` green and `golden_test.go` 
 - **Q14, repeated goal variables.** Refuse `Goal` args that repeat a variable (recommended), or
   treat them as open and ignore the equality? Refuse: silently ignoring an equality is a wrong
   answer with confidence.
+
+## 8. Decided with Matt (2026-10-26)
+
+All fourteen questions in §7 were settled on the recommendation:
+
+- **Q1, API:** precompile per goal. `Plan.Demand(relation, adornment)` returns a rewritten,
+  shareable Plan, and `Options.Goal` carries each request's constants.
+- **Q2, partial relations:** asking a demand Result for any derived relation other than the goal
+  is `ErrInvalid`, with a message saying how to ask for it.
+- **Q3 and Q4, proof and why-not identity:** answers and hashes are identical. Proofs and why-not
+  witnesses are valid and deterministic, but not promised byte-identical to full evaluation's
+  first derivation. This is documented, and Shearline's lead is told.
+- **Q5 to Q14, accepted as recommended:**
+  - Q5: when the rewrite breaks stratification, drop demand per relation.
+  - Q6: cap adornments at 64 per relation and drop the rest.
+  - Q7: charge helper tuples to MaxBytes.
+  - Q8: add `Result.Cost`.
+  - Q9: proofs and why-not only for the goal relation.
+  - Q10: Shearline keeps its seeds.
+  - Q11: Anam decides its own instant/1.
+  - Q12: v0.3 ships separately from v0.2.
+  - Q13: no supplementary magic sets yet.
+  - Q14: a goal that repeats a variable is refused.
+
+Matt asked for the build to go ahead in the five slices of §6.
