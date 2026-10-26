@@ -19,3 +19,4 @@ anam-phone-log, board ask 20261026T104735Z, after Anam moved to v0.3.0 (anam 480
 
 ## Narrative
 - 2026-10-26: filed from Anam's ask by datalog-module. Target v0.3.1.
+- 2026-10-26: implemented in card-11 worktree. Added Builtin.signature and Builtin.argumentText (builtins.go), used by the safety refusal (plan.go checkGuard), the arity refusal and the Check prefix (checkBuiltinAtom). Engine builtins share the path, so they read prefix(Pattern, Subject). Final shapes: `line 4: Other, argument B of within(A, B, Days), must be bound by a positive body atom; a built-in binds nothing`; `within has 2 arguments, but within takes 3: within(A, B, Days)`; `within(A, B, Days): <consumer's Check text>`. Check returns only an error, so the signature is added and the consumer's text kept. Repeated variable names the first unbound argument. Pinned in builtin_refusal_test.go; older tests updated. No answer byte, hash or golden test touched.

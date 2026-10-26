@@ -258,13 +258,13 @@ func checkGuard(l Literal, bound map[string]bool, table builtinTable) error {
 			}
 		}
 	case l.Atom != nil && table.has(l.Atom.Name):
-		for _, t := range l.Atom.Args {
+		for i, t := range l.Atom.Args {
 			if t.Var == "_" {
 				return fmt.Errorf("%w: line %d: _ in %s tests nothing", ErrInvalid, l.Atom.Line, l.Atom.Name)
 			}
 			if t.IsVar() && !bound[t.Var] {
-				return fmt.Errorf("%w: line %d: %s in %s must be bound by a positive body atom; a built-in binds nothing",
-					ErrInvalid, l.Atom.Line, t.Var, l.Atom.Name)
+				return fmt.Errorf("%w: line %d: %s, %s, must be bound by a positive body atom; a built-in binds nothing",
+					ErrInvalid, l.Atom.Line, t.Var, table[l.Atom.Name].argumentText(l.Atom.Name, i))
 			}
 		}
 	case l.Negated:

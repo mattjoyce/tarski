@@ -18,9 +18,9 @@ func TestBuiltins_Hooks(t *testing.T) {
 	refused := []struct{ name, text, want string }{
 		{"in a head", `shorter(X, Y) :- pair(X, Y).`, "shorter is a built-in and cannot be the head of a rule"},
 		{"declared", `shorter/2.`, "shorter is a built-in and cannot be declared"},
-		{"wrong arity", `a(X) :- word(X), shorter(X).`, "shorter has 1 arguments, but shorter is shorter/2"},
-		{"unbound argument", `a(X) :- word(X), shorter(X, Y).`, "Y in shorter must be bound by a positive body atom"},
-		{"bound only by a built-in", `a(X) :- word(X), shorter(X, Y), shorter(Y, X).`, "Y in shorter must be bound"},
+		{"wrong arity", `a(X) :- word(X), shorter(X).`, "shorter has 1 arguments, but shorter takes 2: shorter(A, B)"},
+		{"unbound argument", `a(X) :- word(X), shorter(X, Y).`, "Y, argument B of shorter(A, B), must be bound by a positive body atom"},
+		{"bound only by a built-in", `a(X) :- word(X), shorter(X, Y), shorter(Y, X).`, "Y, argument B of shorter(A, B), must be bound"},
 		{"bound only by a negation", `a(X) :- word(X), not pair(X, Y), shorter(X, Y).`, "Y in not pair is not bound"},
 		{"anonymous", `a(X) :- word(X), shorter(X, _).`, "_ in shorter tests nothing"},
 	}
@@ -181,9 +181,9 @@ func TestBuiltins_Refused(t *testing.T) {
 	t.Parallel()
 	schema := Schema{Arities: map[string]int{"p": 2, "q": 1}}
 	cases := []struct{ name, text, want string }{
-		{"unbound pattern", `a(S) :- q(S), prefix(P, S).`, "P in prefix must be bound by a positive body atom"},
-		{"unbound subject", `a(P) :- q(P), suffix(P, S).`, "S in suffix must be bound by a positive body atom"},
-		{"unbound under not", `a(P) :- q(P), not contains(P, S).`, "S in contains must be bound"},
+		{"unbound pattern", `a(S) :- q(S), prefix(P, S).`, "P, argument Pattern of prefix(Pattern, Subject), must be bound by a positive body atom"},
+		{"unbound subject", `a(P) :- q(P), suffix(P, S).`, "S, argument Subject of suffix(Pattern, Subject), must be bound by a positive body atom"},
+		{"unbound under not", `a(P) :- q(P), not contains(P, S).`, "S, argument Subject of contains(Pattern, Subject), must be bound"},
 		{"anonymous", `a(S) :- q(S), contains("x", _).`, "_ in contains tests nothing"},
 		{"head", `prefix(P, S) :- p(P, S).`, "prefix is a built-in and cannot be the head"},
 		{"head suffix", `suffix(P, S) :- p(P, S).`, "suffix is a built-in and cannot be the head"},
