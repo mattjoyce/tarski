@@ -1,6 +1,6 @@
 ---
 id: 6
-status: doing
+status: done
 ---
 # Aggregates: count, sum, min, max over a grouped body (v0.2)
 
@@ -40,3 +40,4 @@ When Anam asks how many readings fell in June or what the month's spend totals, 
   3. Anam's souffle-diff.py skips the §12/§12.1 deltas.
   4. Post the tag to shearline-lead, anam-phone-log and ductile-core when the board returns. (by datalog-module)
 - 2026-10-26: Matt settled design §11 on every recommendation (design §13) and made the repo public. v0.2.0 is held for the consumer steps: Shearline's HasAggregates refusal and Anam's oracle skips. (by datalog-module)
+- 2026-10-26: Matt closed the card: the engine work shipped in v0.2.0; the consumer steps (Shearline HasAggregates refusal, Anam oracle skips) are the consumers' own. (by datalog-module)

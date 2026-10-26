@@ -91,8 +91,8 @@ Each step ships only when a consumer actually needs it.
    and charged to the bounds. Anam needs them first. Released in v0.2.0
    ([`docs/design/aggregates.md`](docs/design/aggregates.md) § 13).
 2. **Demand-driven evaluation.** Given a goal, derive only the tuples that can reach it (magic
-   sets). Answers do not change, so every existing test and hash still holds. Built on master
-   for v0.3.0 ([`docs/design/demand.md`](docs/design/demand.md), evidence § 9): `Plan.Demand`,
+   sets). Answers do not change, so every existing test and hash still holds. Released in
+   v0.3.0 ([`docs/design/demand.md`](docs/design/demand.md), evidence § 9): `Plan.Demand`,
    `Options.Goal`, `Result.Goal`, `Result.Cost`. Cost follows the question where the goal binds
    something; with every position open it can cost more than a hand-bounded full evaluation,
    so a consumer measures with `Result.Cost` before switching.

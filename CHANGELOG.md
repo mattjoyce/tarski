@@ -4,7 +4,7 @@ Answer bytes, answer hashes, rule-set hashes and constants' canonical text are f
 (README § What it promises consumers; `golden_test.go`). Any change to them is breaking and
 is listed here under its version.
 
-## Unreleased — v0.3.0
+## v0.3.0 — 2026-10-26
 
 Demand-driven evaluation (card 9; the design is `docs/design/demand.md`, Matt's decisions its
 §8, the evidence its §9). Additive: no answer, hash or golden byte changes.

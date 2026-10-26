@@ -528,7 +528,8 @@ binds nothing. Options, for Matt:
 (c) Supplementary magic sets (Q13, deferred), which share the sideways joins instead of
     repeating them.
 
-The v0.3.0 tag waits on this call.
+Matt chose (a) on 2026-10-26: v0.3.0 is tagged as is, and (b) and (c) stay open as
+follow-ups should a consumer need them.
 
 ### 9.3 Hot loop (§5 item 3): met
 

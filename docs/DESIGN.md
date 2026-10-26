@@ -290,7 +290,7 @@ The full design, with the invariants stated first and the Soufflé comparison, i
 ### Demand-driven evaluation (v0.3)
 
 The design, invariants first, is [`docs/design/demand.md`](design/demand.md); Matt's decisions
-are its §8. Built on master (card 9, slices 1 to 5), to ship as v0.3.0:
+are its §8. Released in v0.3.0 (card 9):
 
 ```go
 type Goal struct {
