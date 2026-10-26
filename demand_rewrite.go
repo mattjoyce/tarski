@@ -118,9 +118,14 @@ func (w *rewriter) push(a adorned) adorned {
 // in its body. The body is walked in the source's evaluation order with the head's bound
 // positions bound: a derived atom, positive or negated, is adorned by which of its
 // arguments are bound there (a constant is bound, _ is open), and a positive atom binds
-// its variables after it. The copy's ordered body is the demand literal and then the
-// source's ordered body unchanged, so a guard keeps its place and a proof's body order is
-// the source's.
+// its variables after it. An aggregate's braces are walked by adornInner. The copy's
+// ordered body is the demand literal and then the source's ordered body unchanged, so a
+// guard keeps its place and a proof's body order is the source's.
+//
+// An aggregate's result binds nothing here: demand never passes through a value an
+// aggregate computes, since a demand rule holds positive atoms only. A literal after the
+// aggregate that reads its result is adorned f at that position, which is still sound
+// and complete, only less selective.
 func (w *rewriter) copyRule(sr *rule, a adorned) {
 	bound := map[string]bool{}
 	var lead *Literal
@@ -135,12 +140,48 @@ func (w *rewriter) copyRule(sr *rule, a adorned) {
 	w.out = append(w.out, copyOf(sr, lead))
 	headBound := maps.Clone(bound)
 	for k, l := range sr.ordered {
+		if l.Aggregate != nil {
+			w.adornInner(sr, k, lead, headBound)
+			continue
+		}
 		if l.Atom == nil || w.src.builtins.has(l.Atom.Name) {
 			continue
 		}
 		if w.src.idb[l.Atom.Name] {
 			s := w.push(adorned{l.Atom.Name, adornmentOf(l.Atom.Args, bound)})
-			if dr, ok := w.demandRule(sr, k, s, lead, headBound); ok {
+			if dr, ok := w.demandRule(sr.Line, l.Atom, s, sr.ordered[:k], lead, headBound); ok {
+				w.out = append(w.out, dr)
+			}
+		}
+		if !l.Negated {
+			bindVars(bound, l.Atom.Args)
+		}
+	}
+}
+
+// adornInner adorns the derived atoms inside the braces of the aggregate at sr.ordered[k]
+// (design §2.1, D9; aggregates.md §8). Demand enters the braces through the group
+// variables alone: the walk starts with them bound and nothing else, so a variable local
+// to the group is bound only by an atom inside the braces before it, and the demand set
+// of an inner atom holds every binding the group's solutions reach. A group is never
+// trimmed: for each group the copy computes, every inner relation is complete for
+// what the group reads of it (D3), so the aggregate's value is full evaluation's. The
+// demand rule of an inner atom draws on the atoms before the aggregate and the inner
+// atoms before it, in that order.
+func (w *rewriter) adornInner(sr *rule, k int, lead *Literal, headBound map[string]bool) {
+	agg := sr.aggs[k]
+	bound := make(map[string]bool, len(agg.group))
+	for _, g := range agg.group {
+		bound[g] = true
+	}
+	for j, l := range agg.inner.ordered {
+		if l.Atom == nil || w.src.builtins.has(l.Atom.Name) {
+			continue
+		}
+		if w.src.idb[l.Atom.Name] {
+			s := w.push(adorned{l.Atom.Name, adornmentOf(l.Atom.Args, bound)})
+			prefix := append(slices.Clip(sr.ordered[:k]), agg.inner.ordered[:j]...)
+			if dr, ok := w.demandRule(sr.Line, l.Atom, s, prefix, lead, headBound); ok {
 				w.out = append(w.out, dr)
 			}
 		}
@@ -152,30 +193,35 @@ func (w *rewriter) copyRule(sr *rule, a adorned) {
 
 // copyOf is sr's copy led by lead, or sr itself as a rewritten rule when lead is nil
 // (the all-free adornment). The Rule a copy carries has the demand literal in its body
-// so stratification sees the edge; its proofs name sr, its source.
+// so stratification sees the edge; its proofs name sr, its source. Its aggregate plans
+// are sr's, shifted one place with the body: one plan per aggregate literal, shared by
+// every copy, so a group's memoised value and witnesses are one per evaluation.
 func copyOf(sr *rule, lead *Literal) rule {
-	c := rule{Rule: sr.Rule, ordered: sr.ordered, source: &sr.Rule, demand: noDemand}
+	c := rule{Rule: sr.Rule, ordered: sr.ordered, aggs: sr.aggs, source: &sr.Rule, demand: noDemand}
 	if lead == nil {
 		return c
 	}
 	c.Body = append([]Literal{*lead}, sr.Body...)
 	c.ordered = append([]Literal{*lead}, sr.ordered...)
+	if sr.aggs != nil {
+		c.aggs = append([]*aggPlan{nil}, sr.aggs...)
+	}
 	c.demand = 0
 	return c
 }
 
-// demandRule is the rule that passes demand to the derived literal at sr.ordered[k],
-// adorned s: its head is s's demand relation over s's bound arguments, its body the
-// copy's demand literal (if any) and the smallest set of positive atoms before k that
-// binds what the head needs, found by walking back from k and keeping an atom when it
-// binds a needed variable, then needing its variables too. ok is false when s binds
-// nothing, and when the rule would only restate its own demand literal (a recursion
-// through the same binding).
-func (w *rewriter) demandRule(sr *rule, k int, s adorned, lead *Literal, headBound map[string]bool) (rule, bool) {
+// demandRule is the rule that passes demand to atom, adorned s: its head is s's demand
+// relation over s's bound arguments, its body the copy's demand literal (if any) and the
+// smallest set of positive atoms from prefix, the literals evaluated before atom, that
+// binds what the head needs, found by walking back through prefix and keeping an atom
+// when it binds a needed variable, then needing its variables too. ok is false when s
+// binds nothing, and when the rule would only restate its own demand literal (a
+// recursion through the same binding).
+func (w *rewriter) demandRule(line int, atom *Atom, s adorned, prefix []Literal, lead *Literal, headBound map[string]bool) (rule, bool) {
 	if !strings.Contains(s.adornment, "b") {
 		return rule{}, false
 	}
-	head := Atom{Name: hiddenName(s), Args: pick(sr.ordered[k].Atom.Args, s.adornment), Line: sr.Line}
+	head := Atom{Name: hiddenName(s), Args: pick(atom.Args, s.adornment), Line: line}
 	need := map[string]bool{}
 	note := func(args []Term) {
 		for _, t := range args {
@@ -185,26 +231,26 @@ func (w *rewriter) demandRule(sr *rule, k int, s adorned, lead *Literal, headBou
 		}
 	}
 	note(head.Args)
-	var prefix []Literal
-	for j := k - 1; j >= 0; j-- {
-		l := sr.ordered[j]
+	var kept []Literal
+	for j := len(prefix) - 1; j >= 0; j-- {
+		l := prefix[j]
 		if l.Atom == nil || l.Negated || w.src.builtins.has(l.Atom.Name) || !binds(l.Atom.Args, need) {
 			continue
 		}
-		prefix = append(prefix, l)
+		kept = append(kept, l)
 		note(l.Atom.Args)
 	}
-	slices.Reverse(prefix)
+	slices.Reverse(kept)
 	var body []Literal
 	demand := noDemand
 	if lead != nil {
-		if len(prefix) == 0 && lead.Atom.Name == head.Name && slices.Equal(lead.Atom.Args, head.Args) {
+		if len(kept) == 0 && lead.Atom.Name == head.Name && slices.Equal(lead.Atom.Args, head.Args) {
 			return rule{}, false
 		}
 		body, demand = append(body, *lead), 0
 	}
-	body = append(body, prefix...)
-	r := Rule{Head: head, Body: body, Line: sr.Line}
+	body = append(body, kept...)
+	r := Rule{Head: head, Body: body, Line: line}
 	return rule{Rule: r, ordered: body, demand: demand}, true
 }
 

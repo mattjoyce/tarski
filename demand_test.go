@@ -86,10 +86,6 @@ func strGoal(relation string, args ...string) *tarski.Goal {
 func TestDemand_Refuses(t *testing.T) {
 	t.Parallel()
 	plan, demand := rbacPlans(t)
-	agg, err := tarski.Compile(rbacTestSchema, parse(t, `n(P, N) :- role(P, _), N = count : { role(P, _) }.`))
-	if err != nil {
-		t.Fatal(err)
-	}
 	cases := []struct {
 		name                string
 		plan                tarski.Plan
@@ -101,7 +97,6 @@ func TestDemand_Refuses(t *testing.T) {
 		{"adornment too short", plan, "allow", "bb", "adornment"},
 		{"adornment letter", plan, "allow", "bbx", "adornment"},
 		{"already for a goal", demand, "allow", "bbb", "already compiled"},
-		{"aggregates", agg, "n", "bf", "not yet supported"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

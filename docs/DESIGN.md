@@ -290,7 +290,7 @@ The full design, with the invariants stated first and the Soufflé comparison, i
 ### Demand-driven evaluation (v0.3, in progress)
 
 The design, invariants first, is [`docs/design/demand.md`](design/demand.md); Matt's decisions
-are its §8. Built so far (card 9, slices 1 to 3):
+are its §8. Built so far (card 9, slices 1 to 4):
 
 ```go
 type Goal struct {
@@ -324,8 +324,16 @@ func (r Result) Goal() (g Goal, ok bool)                          // ok false fo
   goal's own included (it then has no seed), and the relations below it keep their demand. It
   never changes an answer, it ends (each round drops a relation not dropped before, and the
   source program stratifies), and it is a function of the plan and the goal shape.
-- **Not yet.** `Demand` refuses, with `ErrInvalid` saying "not yet supported", a plan with
-  aggregates. A later slice lifts it.
+- **Aggregates.** Demand enters an aggregate's braces only through its group variables: the
+  atoms inside are adorned with the group variables bound and then what the inner atoms
+  before them bind, never a local from outside, so for every group the goal needs, each
+  relation read inside the braces is complete for that group and the group is computed whole.
+  The value is full evaluation's, and why-not through an aggregate, which computes the group
+  over the result's relations, meets the same value. Copies of an aggregate rule share its
+  aggregate plans, so a group's memoised value and witnesses are one per evaluation, and a
+  proof's group lists witnesses full evaluation holds. An aggregate's result passes no demand:
+  a literal after the aggregate that reads the result is adorned open at that position (a
+  demand rule holds positive atoms only), which is sound and complete, only less selective.
 
 ### Built-ins
 

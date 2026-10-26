@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+// aggCycleText is a recursion whose demand reaches an aggregate's braces and comes back.
+const aggCycleText = `p(X, Y) :- e(X, Y). p(X, Y) :- p(X, Z), c(Z, N), N > 1, e(Z, Y). ` +
+	`c(Z, N) :- e(Z, _), N = count : { s(Z, W) }. s(Z, W) :- e(Z, W), e(W, Z).`
+
 // The fallback of design §2.4, pinned: when the rewrite cannot be stratified, demand is
 // dropped for the source relation of the first demand relation, by sorted name, in the
 // first component holding a negative edge, and the rewrite runs again. The rewrite text
@@ -42,6 +46,18 @@ func TestRewrite_Fallback(t *testing.T) {
 				"1 a(X, Y) :- e(X, Y).",
 				"1 a(X, Y) :- b(X, Z), a(Z, Y).",
 				"1 b(X, Z) :- e(X, Z), not c(X, Z).",
+			},
+		},
+		{
+			// An aggregate's edge is negative too: p passes demand to c, c's braces pass it to
+			// s, and p reads c, so m?c?bf -> p -> c -> (aggregate) s -> m?s?bf -> m?c?bf. c goes,
+			// and s keeps the demand c's whole rule passes it through the group variable.
+			"demand through an aggregate cycle", aggCycleText, "p", "bf", graph, "c", "m?p?bf", []string{
+				"0 m?s?bf(Z) :- e(Z, _).",
+				"0 s(Z, W) :- m?s?bf(Z), e(Z, W), e(W, Z).",
+				"1 p(X, Y) :- m?p?bf(X), e(X, Y).",
+				"1 p(X, Y) :- m?p?bf(X), p(X, Z), c(Z, N), N > 1, e(Z, Y).",
+				"1 c(Z, N) :- e(Z, _), N = count : { s(Z, W) }.",
 			},
 		},
 		{

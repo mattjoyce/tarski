@@ -51,9 +51,11 @@ type demandPlan struct {
 // more than 64 binding patterns, demand is dropped for that relation, which is then
 // derived whole; the answer is the same either way, only the work differs.
 //
+// Demand passes into an aggregate's braces only through its group variables, so every
+// group the goal needs is computed whole and its value is full evaluation's.
+//
 // ErrInvalid for an unknown or base relation, a malformed adornment, or a plan already
-// compiled for a goal. A plan with aggregates is not yet supported and is refused with
-// ErrInvalid saying so.
+// compiled for a goal.
 func (p Plan) Demand(relation, adornment string) (Plan, error) {
 	if p.demand != nil {
 		return Plan{}, fmt.Errorf("%w: the plan is already compiled for goals over %s; call Demand on the plan Compile returned",
@@ -69,9 +71,6 @@ func (p Plan) Demand(relation, adornment string) (Plan, error) {
 	case len(adornment) != arity || strings.Trim(adornment, "bf") != "":
 		return Plan{}, fmt.Errorf("%w: Demand: adornment %q for %s/%d: write one b (bound) or f (open) per position",
 			ErrInvalid, adornment, relation, arity)
-	case p.HasAggregates():
-		return Plan{}, fmt.Errorf("%w: Demand: demand through aggregates is not yet supported; evaluate the plan without a goal",
-			ErrInvalid)
 	}
 	d, err := p.rewrite(relation, adornment)
 	if err != nil {

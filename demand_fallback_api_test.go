@@ -12,7 +12,8 @@ import (
 // decided §8 Q5): demand is dropped for a relation at a time until the rewrite stratifies,
 // and every answer is still full evaluation's filtered to the goal, with valid proofs and
 // the same why-not failures. The first program is the one slice 2 refused; in the second
-// the goal's own relation loses its demand and is derived whole.
+// the goal's own relation loses its demand and is derived whole; in the third the cycle
+// runs through an aggregate's braces.
 func TestDemand_Fallback(t *testing.T) {
 	t.Parallel()
 	schema := tarski.Schema{Arities: map[string]int{"e": 2}}
@@ -20,6 +21,8 @@ func TestDemand_Fallback(t *testing.T) {
 		{"demand under a negation", `r0(X, Y) :- e(X, Y). r1(X, Y) :- e(Y, X). r1(X, Y) :- r1(X, Z), e(Z, Y), not r0(X, Y).`, "r1"},
 		{"the goal's own demand dropped", `a(X, Y) :- e(X, Y). a(X, Y) :- b(X, Z), a(Z, Y). b(X, Z) :- e(X, Z), not c(X, Z). ` +
 			`c(X, Z) :- e(X, Z), e(Z, X).`, "a"},
+		{"demand through an aggregate cycle", `p(X, Y) :- e(X, Y). p(X, Y) :- p(X, Z), c(Z, N), N > 1, e(Z, Y). ` +
+			`c(Z, N) :- e(Z, _), N = count : { s(Z, W) }. s(Z, W) :- e(Z, W), e(W, Z).`, "p"},
 	}
 	for _, p := range programs {
 		t.Run(p.name, func(t *testing.T) {
@@ -78,7 +81,7 @@ func checkFallback(t *testing.T, plan tarski.Plan, base tarski.Base, full tarski
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := demandCase{text: text, goal: goal, full: full, demand: res}
+	c := demandCase{text: text, goal: goal, full: full, demand: res, domain: propStrings()}
 	want := filtered(t, full, goal)
 	got, err := res.Relation(relation)
 	if err != nil || got.Hash() != want.Hash() {
